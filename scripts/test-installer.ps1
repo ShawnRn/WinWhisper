@@ -53,6 +53,19 @@ try{
         Require ($machine -eq $expected) 'Universal installer selected the wrong payload'
     }
     $checks.applicationMachine=$machine; $checks.workerMachine=$workerMachine
+    if($machine -eq 0xaa64){Require ((Read-Machine "$target/worker-x64/MemoAI.Worker.exe") -eq 0x8664) 'ARM64 package is missing its x64 GPU Worker'}
+    # Exercise packaged CLI dependencies as well as WinUI startup. This catches
+    # missing app-local VC runtimes and FFmpeg companion DLLs.
+    $engineRid=if($machine -eq 0xaa64){'win-arm64'}else{'win-x64'}
+    $engineRoot=Join-Path $target "engines/$engineRid"
+    foreach($probe in @(@('ffmpeg','ffmpeg.exe','-version'),@('whisper-cpu','whisper-cli.exe','-h'),@('deno','deno.exe','--version'))){
+        $tool=Get-ChildItem -LiteralPath (Join-Path $engineRoot $probe[0]) -Recurse -File -Filter $probe[1] | Select-Object -First 1
+        Require ($null -ne $tool) "Packaged tool is missing: $($probe[0])"
+        $native=Start-Process -FilePath $tool.FullName -ArgumentList $probe[2] -WindowStyle Hidden -PassThru -RedirectStandardOutput "$run/$($probe[0]).stdout.txt" -RedirectStandardError "$run/$($probe[0]).stderr.txt"
+        if(!$native.WaitForExit(30000)){Stop-Process -Id $native.Id -ErrorAction SilentlyContinue;throw "Packaged tool timed out: $($probe[0])"}
+        Require ($native.ExitCode -eq 0) "Packaged tool failed: $($probe[0]) ($($native.ExitCode))"
+    }
+    $checks.packagedNativeToolsPassed=$true
     Require (!(Test-Path -LiteralPath $desktopLink)) 'Desktop shortcut was created by default'
     Require (Test-Path -LiteralPath $menuLink) 'Start menu shortcut is missing'
     $checks.desktopUnchecked=$true; $checks.startMenuCreated=$true
