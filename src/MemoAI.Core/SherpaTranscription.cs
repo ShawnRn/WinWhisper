@@ -21,7 +21,7 @@ public sealed class SherpaTranscription(AppPaths paths) : ITranscriptionEngine
     {
         var s = request.Settings; var model = AsrModels.ReadInstallation(s.TranscriptionModelPath);
         return Path.Combine(request.WorkDirectory, "transcription", MediaTools.CacheKey(request.MediaPath, s.TranscriptionModelPath,
-            Json.Write(new { version = "sherpa-1.13.8-gpu-v2", provider, model.Sha256, s.AutoSegmentEnglish, s.Language, s.Glossary, s.EnableVad, request.RangeStart, request.RangeEnd })));
+            Json.Write(new { version = "sherpa-1.13.8-gpu-v3", provider, model.Sha256, s.AutoSegmentEnglish, s.RemoveEnglishFillers, s.Language, s.Glossary, s.EnableVad, request.RangeStart, request.RangeEnd })));
     }
     public static OfflineRecognizerConfig Configuration(string manifest, AppSettings settings)
     {
@@ -96,6 +96,7 @@ public sealed class SherpaTranscription(AppPaths paths) : ITranscriptionEngine
                     if (text.Length > 0) segments.Add(new() { Start = offset + start / 16000d, End = Math.Min(finish, offset + end / 16000d), Text = text,
                         Words = SentenceSegmentation.ReadOnnxWords(result.Tokens, result.Timestamps, result.Durations, offset + start / 16000d, Math.Min(finish, offset + end / 16000d)) });
                 }
+                if (settings.RemoveEnglishFillers) segments = TranscriptEditing.RemoveFillers(segments);
                 if (settings.AutoSegmentEnglish && segments.Any(s => SentenceSegmentation.HasReliableWords(s) && SentenceSegmentation.IsEnglish(s.Text)))
                     segments = SentenceSegmentation.Optimize(segments, await media.DetectSilencesAsync(wav, ct, offset));
                 var pending = checkpoint + ".pending"; await File.WriteAllTextAsync(pending, Json.Write(segments), ct); File.Move(pending, checkpoint, true); File.Delete(wav);

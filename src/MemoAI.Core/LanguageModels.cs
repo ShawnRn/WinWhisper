@@ -169,7 +169,7 @@ public sealed class AiService(ILocalLanguageModelProvider provider, AppSettings 
         var conversation = string.Join("\n\n", (history ?? []).Where(t => t.Content.Length > 0).TakeLast(8).Select(t => $"{(t.Role == "user" ? "用户" : "助手")}：{t.Content[..Math.Min(t.Content.Length, 400)]}"));
         if (conversation.Length > 2000) conversation = conversation[^2000..];
         var context = $"历史对话（仅作追问上下文，可能包含错误，以转写证据为准）：\n{conversation}\n\n当前问题：{question}";
-        var system = "根据原始转写回答问题，引用原文时间戳。理解追问中的指代。历史回答可能有误，以转写为准。不可把一个片段中未提及，推断为整个视频未提及。信息不足时说明不确定，不要虚构。" + ChineseTypography.Instructions;
+        var system = "根据原始转写回答问题，引用原文时间戳。理解追问中的指代。历史回答可能有误，以转写为准。不可把一个片段中未提及，推断为整个视频未提及。信息不足时说明不确定，不要虚构。当前是只读问答模式，不能声称已修改字幕；需要纠错或断句时，请用户开启输入框上方的「修改字幕」生成可审阅提案。" + ChineseTypography.Instructions;
         if (chunks.Length == 1) return StripThinking(await provider.GenerateAsync(settings.SummaryModel, system, $"已提供全部转写：\n{chunks[0]}\n\n{context}", delta, ct));
         var evidence = new List<string>();
         for (var i = 0; i < chunks.Length; i++)

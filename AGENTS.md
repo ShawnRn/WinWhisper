@@ -53,6 +53,10 @@ Read [workflows/README.md](workflows/README.md) for the development, native UI, 
 - Never infer word alignment by dividing subtitle duration by character count. Preserve model token timestamps, validate their correspondence to the text, and use audio pauses only as boundary evidence. Punctuation restoration must reject paraphrases, dropped words, reordered words or changed numbers. Retain original cue boundaries when word timings are unavailable.
 - Subtitle translation defaults to the full transcript and always exposes the chosen scope and target language. API translation requires an explicit configured provider and confirmation showing the destination and text scope; store keys only in Windows Credential Manager. Never route local chat through a translation API.
 - Media questions must inspect every transcript chunk. Never silently select the first N cues or truncate the transcript before answering, and never infer full-media absence from a partial excerpt. Show coverage progress for long transcripts.
+- Transcript Agent capabilities are limited to paged reading, full-source search and validated edit proposals. Keep bounded tool loops, correlated events and cancellation; the model cannot apply revisions or access arbitrary files / shell. Preserve Proma attribution as a design reference, not a code dependency.
+- Persist proposal baselines, parent versions, complete before/after text and decisions. Apply only through an explicit Diff review, checking both memory and database hashes in the same transaction as the revision decision. Rejecting never changes subtitles; rollback appends history. Do not create full versions for every intermediate ASR progress batch.
+- Review Diff and complete before/after views inside the original transcript pane, keeping player and chat visible. Preserve pending proposals on later/navigation/close; do not apply them implicitly or replace review with a blocking modal.
+- Diff highlighting applies only to changed words / graphemes. Keep unchanged context in the normal text color, preserve both source strings exactly and bound comparison memory for large imported cues.
 
 ## Open source and release hygiene
 

@@ -130,8 +130,14 @@ public sealed partial class MainWindow
             DependencyObject? flyoutParent = TranscriptionSettingsPanel;
             while (flyoutParent is not null && flyoutParent is not FlyoutPresenter) flyoutParent = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(flyoutParent);
             result["transcriptionSettingsFitFlyout"] = flyoutParent is FlyoutPresenter presenter && presenter.ActualWidth >= TranscriptionSettingsPanel.ActualWidth;
-            TranscriptionLanguage.IsDropDownOpen = true; await Task.Delay(200);
-            var popupBorders = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(Root.XamlRoot).SelectMany(p => new[] { p.Child }.Concat(Descendants(p.Child))).OfType<Border>().Where(b => b.Name == "PopupBorder").ToArray();
+            TranscriptionLanguage.IsDropDownOpen = true;
+            Border[] popupBorders = [];
+            for (var i = 0; i < 100; i++)
+            {
+                popupBorders = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(Root.XamlRoot).SelectMany(p => new[] { p.Child }.Concat(Descendants(p.Child))).OfType<Border>().Where(b => b.Name == "PopupBorder").ToArray();
+                if (popupBorders.Any(b => b is { Child: ScrollViewer { Content: ItemsPresenter }, Background: ContinuousPopupBrush paint } && ReferenceEquals(paint.Owner, b))) break;
+                await Task.Delay(20);
+            }
             result["comboPopupDetails"] = string.Join(";", popupBorders.Select(b => $"{b.Child?.GetType().Name}/{(b.Child as ScrollViewer)?.Content?.GetType().Name}/{b.Background?.GetType().Name}/owner={ReferenceEquals((b.Background as ContinuousPopupBrush)?.Owner, b)}"));
             result["comboPopupPreservesNativeContentContract"] = popupBorders.Any(b => b is { Child: ScrollViewer { Content: ItemsPresenter }, Background: ContinuousPopupBrush paint } && ReferenceEquals(paint.Owner, b));
             TranscriptionBackend.IsDropDownOpen = true; await Task.Delay(200);
@@ -142,6 +148,36 @@ public sealed partial class MainWindow
             for (var i = 0; i < 100 && transcriptionFlyoutOpen; i++) await Task.Delay(20);
             result["settingsCloseDetails"] = $"open={transcriptionFlyoutOpen};checked={TranscriptionSettingsButton.IsChecked};dropdown={TranscriptionBackend.IsDropDownOpen}";
             result["settingsCloseResetsToggleAndChildDropdowns"] = !transcriptionFlyoutOpen && TranscriptionSettingsButton.IsChecked != true && !TranscriptionBackend.IsDropDownOpen;
+            ChatEditMode.IsChecked = true;
+            result["chatCanSwitchBetweenTranscriptQuestionsAndEdits"] = QuestionBox.PlaceholderText.Contains("断句") && TranscriptAccessLabel.Text.Contains("全文");
+            ChatEditMode.IsChecked = false;
+            result["fillerCleanupIsConfiguredInFrozenTranscriptionOptions"] = TranscriptionFillers.IsChecked == true && ReadTranscriptionOptions().RemoveEnglishFillers;
+            var editBefore = fixture.Segments.Select(c => c.Copy()).ToArray();
+            var editAfter = fixture.Segments.Select(c => { var copy = c.Copy(); copy.Text = "Edited preview."; return copy; }).ToArray();
+            var editPreview = CreateTranscriptPreview(editBefore, editAfter, "fixture", 0);
+            var wordDiffView = new TranscriptDiffView { Diff = new TranscriptDiff("0–2", "修改", "we are at spacex", "we are at SpaceX") };
+            var diffRows = ((StackPanel)wordDiffView.Content).Children.OfType<RichTextBlock>().ToArray();
+            var afterRuns = diffRows[1].Blocks.OfType<Microsoft.UI.Xaml.Documents.Paragraph>().Single().Inlines.OfType<Microsoft.UI.Xaml.Documents.Run>().ToArray();
+            result["wordDiffKeepsUnchangedContextInNormalColor"] = afterRuns.Any(r => r.Text == "we are at " && r.ReadLocalValue(Microsoft.UI.Xaml.Documents.TextElement.ForegroundProperty) == DependencyProperty.UnsetValue) && afterRuns.Any(r => r.Text == "SpaceX" && r.ReadLocalValue(Microsoft.UI.Xaml.Documents.TextElement.ForegroundProperty) != DependencyProperty.UnsetValue);
+            result["transcriptPreviewShowsCompleteBeforeAndAfterWithoutApplying"] = editPreview.Children.OfType<Pivot>().Single().Items.Count == 3 && fixture.Segments[0].Text == editBefore[0].Text;
+            var inlineRevision = store.CreateTranscriptProposal(fixture, editBefore, editAfter, "inline fixture");
+            var inlineReview = PreviewTranscriptAsync(fixture, editBefore, editAfter, "inline fixture", "fixture", revision: inlineRevision);
+            await Task.Delay(50); TranscriptReviewHost.UpdateLayout();
+            result["transcriptReviewOccupiesOriginalPaneWithoutModalOrEarlyWrite"] = TranscriptReviewHost.Visibility == Visibility.Visible && TranscriptReviewHost.ActualWidth > 0 && SubtitleList.Visibility == Visibility.Collapsed && !SubtitleEditorPane.IsEnabled && fixture.Segments[0].Text == editBefore[0].Text;
+            CompleteTranscriptReview(); await inlineReview;
+            result["laterKeepsPersistentProposalAndRestoresTranscriptPane"] = store.GetTranscriptVersion(fixture.Id, inlineRevision.Id).Status == "Pending" && TranscriptReviewHost.Visibility == Visibility.Collapsed && SubtitleList.Visibility == Visibility.Visible;
+            inlineReview = PreviewTranscriptAsync(fixture, editBefore, editAfter, "inline fixture", "fixture", revision: inlineRevision);
+            CompleteTranscriptReview(ContentDialogResult.Secondary); await inlineReview;
+            result["inlineRejectRetainsOriginalTranscript"] = store.GetTranscriptVersion(fixture.Id, inlineRevision.Id).Status == "Rejected" && fixture.Segments[0].Text == editBefore[0].Text;
+            inlineReview = PreviewTranscriptAsync(fixture, editBefore, editAfter, "rejected fixture", "fixture", revision: store.GetTranscriptVersion(fixture.Id, inlineRevision.Id), readOnly: true);
+            result["rejectedHistoryIsReadOnly"] = Descendants(TranscriptReviewHost).OfType<Button>().Where(b => b.Content as string is "允许修改" or "拒绝修改").All(b => b.Visibility == Visibility.Collapsed);
+            CompleteTranscriptReview(); await inlineReview;
+            inlineReview = PreviewTranscriptAsync(fixture, editBefore, editAfter, "inline fixture", "fixture");
+            CompleteTranscriptReview(ContentDialogResult.Primary); await inlineReview; Undo_Click(this, new());
+            result["transcriptEditsAreUndoableAndRejectStalePreviews"] = fixture.Segments[0].Text == editBefore[0].Text;
+            fixture.Segments[0].Text = "Changed after preview";
+            try { CommitTranscriptChanges(fixture, editBefore, editAfter); result["transcriptEditsAreUndoableAndRejectStalePreviews"] = false; } catch (InvalidOperationException) { }
+            fixture.Segments[0].Text = editBefore[0].Text; RefreshSubtitles();
             await AiService.GpuGate.WaitAsync();
             try
             {

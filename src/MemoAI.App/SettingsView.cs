@@ -28,8 +28,10 @@ public sealed partial class MainWindow
         TextSetting(transcription, "音频语言（auto / zh / en / ja 等）", settings.Language, v => settings.Language = v);
         var vad = new CheckBox { FontFamily = SettingsFont, Content = "启用 VAD（需要先下载或选择 Silero 模型）", IsChecked = settings.EnableVad };
         transcription.Children.Add(vad); settingWriters.Add(() => settings.EnableVad = vad.IsChecked == true);
-        var segmentation = new CheckBox { FontFamily = SettingsFont, Content = "Whisper 英语自动断句（词时间戳 + 音频停顿）", IsChecked = settings.AutoSegmentEnglish };
+        var segmentation = new CheckBox { FontFamily = SettingsFont, Content = "英语自动断句（可用词时间戳 + 音频停顿）", IsChecked = settings.AutoSegmentEnglish };
         transcription.Children.Add(segmentation); settingWriters.Add(() => settings.AutoSegmentEnglish = segmentation.IsChecked == true);
+        var fillers = new CheckBox { FontFamily = SettingsFont, Content = "新转写自动清理英语 uh / um（不修改音频）", IsChecked = settings.RemoveEnglishFillers };
+        transcription.Children.Add(fillers); settingWriters.Add(() => settings.RemoveEnglishFillers = fillers.IsChecked == true);
         FileSetting(transcription, "Silero VAD 模型", settings.VadModelPath, p => settings.VadModelPath = p, ".bin");
         var llm = SettingsSection("本地翻译与总结", "支持已经运行的 Ollama，以及应用自己管理的 llama.cpp。服务地址限制为回环地址。");
         Choice(llm, "本地 AI 提供方", new[] { "Ollama", "内置 llama.cpp（GGUF）" }, (int)settings.ModelProvider, i => settings.ModelProvider = (LanguageModelKind)i);

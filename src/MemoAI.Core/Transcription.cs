@@ -40,7 +40,7 @@ public sealed class WhisperEngine(AppPaths paths) : ITranscriptionEngine
             var cli = paths.FindEngine(id, "whisper-cli.exe");
             foreach (var dll in Directory.EnumerateFiles(Path.GetDirectoryName(cli)!, "*.dll")) PeArchitecture.RequireCompatible(dll);
             var key = MediaTools.CacheKey(request.MediaPath, request.Settings.TranscriptionModelPath,
-                Json.Write(new { engine = "b5454-word-boundaries-v2", backend, options = TranscriptionOptions.FromSettings(request.Settings), request.Settings.AutoSegmentEnglish, request.Settings.VadModelPath, begin, finish }));
+                Json.Write(new { engine = "b5454-word-boundaries-v3", backend, options = TranscriptionOptions.FromSettings(request.Settings), request.Settings.AutoSegmentEnglish, request.Settings.VadModelPath, begin, finish }));
             var cache = Path.Combine(request.WorkDirectory, "transcription", key); Directory.CreateDirectory(cache);
             var all = new List<SubtitleSegment>(); var watch = Stopwatch.StartNew(); var device = backend == ComputeBackend.Cpu ? $"{AppPaths.Rid} CPU" : "";
             var chunkSeconds = request.Settings.TranscriptionChunkSeconds;
@@ -122,6 +122,7 @@ public sealed class WhisperEngine(AppPaths paths) : ITranscriptionEngine
                         var text = ChineseTypography.Apply(s.GetProperty("text").GetString()?.Trim() ?? "");
                         if (text.Length > 0 && to > from) segments.Add(new() { Start = from, End = to, Text = text, Words = SentenceSegmentation.ReadWhisperWords(s, offset, finish) });
                     }
+                    if (request.Settings.RemoveEnglishFillers) segments = TranscriptEditing.RemoveFillers(segments);
                     if (request.Settings.AutoSegmentEnglish && segments.Any(s => SentenceSegmentation.IsEnglish(s.Text) && SentenceSegmentation.HasReliableWords(s)))
                         segments = SentenceSegmentation.Optimize(segments, await media.DetectSilencesAsync(wav, ct, offset));
                     var pending = checkpoint + ".pending";

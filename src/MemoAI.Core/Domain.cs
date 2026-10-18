@@ -74,6 +74,7 @@ public sealed class AppSettings
     public string Language { get; set; } = "auto";
     public string TargetLanguage { get; set; } = "简体中文";
     public bool AutoSegmentEnglish { get; set; } = true;
+    public bool RemoveEnglishFillers { get; set; } = true;
     public bool CloudTranslation { get; set; }
     public string TranslationApiBase { get; set; } = "";
     public string TranslationApiModel { get; set; } = "";
@@ -115,6 +116,7 @@ public sealed class TranscriptionOptions
     public string Language { get; set; } = "auto";
     public ComputeBackend Backend { get; set; }
     public bool EnableVad { get; set; } = true;
+    public bool RemoveEnglishFillers { get; set; } = true;
     public int Threads { get; set; }
     public int BeamSize { get; set; } = 5;
     public int ChunkSeconds { get; set; } = 300;
@@ -123,7 +125,7 @@ public sealed class TranscriptionOptions
     public string Prompt { get; set; } = "";
     public static TranscriptionOptions FromSettings(AppSettings s) => new()
     {
-        ModelPath = s.TranscriptionModelPath, Language = s.Language, Backend = s.Backend, EnableVad = s.EnableVad,
+        ModelPath = s.TranscriptionModelPath, Language = s.Language, Backend = s.Backend, EnableVad = s.EnableVad, RemoveEnglishFillers = s.RemoveEnglishFillers,
         Threads = s.TranscriptionThreads, BeamSize = s.TranscriptionBeamSize, ChunkSeconds = s.TranscriptionChunkSeconds,
         MaxLength = s.TranscriptionMaxLength, Temperature = s.TranscriptionTemperature, Prompt = s.Glossary
     };
@@ -132,7 +134,7 @@ public sealed class TranscriptionOptions
         if (Threads is < 0 or > 64 || BeamSize is < 1 or > 10 || ChunkSeconds is < 30 or > 900 || MaxLength is < 0 or > 200 || !double.IsFinite(Temperature) || Temperature is < 0 or > 1)
             throw new ArgumentException("转写参数超出允许范围。");
         var s = Json.Read<AppSettings>(Json.Write(defaults));
-        s.TranscriptionModelPath = ModelPath; s.Language = Language; s.Backend = Backend; s.EnableVad = EnableVad;
+        s.TranscriptionModelPath = ModelPath; s.Language = Language; s.Backend = Backend; s.EnableVad = EnableVad; s.RemoveEnglishFillers = RemoveEnglishFillers;
         s.TranscriptionThreads = Threads; s.TranscriptionBeamSize = BeamSize; s.TranscriptionChunkSeconds = ChunkSeconds;
         s.TranscriptionMaxLength = MaxLength; s.TranscriptionTemperature = Temperature; s.Glossary = Prompt;
         return s;

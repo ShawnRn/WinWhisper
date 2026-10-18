@@ -49,7 +49,7 @@ CUDA 及 NVIDIA 运行时保留 NVIDIA 的分发条款。模型不随源码仓�
 
 ## 设计参考与品牌资源
 
-- [Proma](https://github.com/proma-ai/Proma)：聊天工作台与多轮消息组织的交互参考；WinWhisper 使用自行实现的 WinUI 控件和 Markdig 渲染，没有移植其 Electron / React 应用代码。Proma 上游为 AGPL-3.0。
+- [Proma](https://github.com/proma-ai/Proma)：聊天工作台与多轮消息组织的交互参考；额外参考提交 `e49930e863363ae7eb5c6ccfb146d443043bf521` 的 Agent runtime、能力工具边界、运行 ID / 事件序号和取消传播设计。WinWhisper 的字幕工具循环、版本、Diff 和审阅由 C# 独立实现，没有移植其 Electron / React / Pi adapter 代码或引入 Pi SDK。Proma 上游为 AGPL-3.0。
 - [tomakura/yt-dlp-gui](https://github.com/tomakura/yt-dlp-gui)：在线下载、代理及 Cookie 选项的流程参考；WinWhisper 独立实现 yt-dlp 参数和原生界面。上游为 MIT。
 - Memo：最初的功能需求参考。未提取或复用 Memo 安装包中的程序代码、商标或资源；WinWhisper 为独立项目。
 - [Noto Sans SC](https://github.com/google/fonts/tree/main/ofl/notosanssc)：应用中文字体，SIL OFL 1.1；来源提交、原始哈希和许可随 `Assets/Fonts` 保存。

@@ -127,6 +127,7 @@ public sealed partial class MainWindow : Window
     private async Task ShutdownAndCloseAsync()
     {
         if (closing) return;
+        CompleteTranscriptReview();
         closing = true; playbackTimer.Stop(); saveTimer.Stop(); noticeTimer.Stop(); recordingTimer.Stop(); aiCancellation?.Cancel(); linkCancellation?.Cancel();
         foreach (var cancellation in modelDownloads.Values) cancellation.Cancel();
         cudaRuntimeDownload?.Cancel();
@@ -175,6 +176,7 @@ public sealed partial class MainWindow : Window
     }
     private void ShowPage(UIElement page)
     {
+        if (page != WorkspaceView) CompleteTranscriptReview();
         if (page == RecordView) RefreshRecordingChoices();
         var changed = RecordNavigation(page);
         if (changed && transcriptionFlyoutOpen) { CloseTranscriptionDropdowns(); TranscriptionFlyout.Hide(); }
@@ -239,6 +241,7 @@ public sealed partial class MainWindow : Window
     }
     private async Task OpenSessionAsync(MediaSession session)
     {
+        CompleteTranscriptReview();
         await SaveCurrentAsync(); current = session; selected = null; undo.Clear(); lastFollowId = null; waveform = [];
         var formatted = false;
         foreach (var cue in session.Segments)
@@ -270,6 +273,7 @@ public sealed partial class MainWindow : Window
         try { SyncItems(visibleSegments, filtered); }
         finally { followingPlaybackSelection = wasFollowing; }
         SessionMeta.Text = $"{current.Folder}  ·  {current.Segments.Count} 条字幕  ·  {current.DurationLabel}";
+        TranscriptAccessLabel.Text = $"已连接全文 · {current.Segments.Count} 条字幕";
     }
     private async Task<IReadOnlyList<string>> PickFilesAsync(params string[] extensions)
     {
@@ -362,11 +366,13 @@ public sealed partial class MainWindow : Window
                         }
                         ApplySubtitleSnapshot(session, snapshot);
                         if (session.Duration == 0) session.Duration = segments.Select(s => s.End).DefaultIfEmpty().Max();
-                        store.SaveSession(session);
+                        store.SaveSession(session, recordVersion: false);
                         if (current?.Id == session.Id) { current = session; TrackSegments(); RefreshSubtitles(); }
                     }
                 }
                 RefreshJobs(); RefreshTranscriptionProgress(); UpdateEditState();
+                if (job.State == JobState.Completed && sessions.FirstOrDefault(s => s.Id == job.SessionId) is { } completedSession)
+                    store.SaveTranscriptCheckpoint(completedSession, "任务完成：" + job.Operation);
                 if (!job.Operation.StartsWith("transcribe", StringComparison.Ordinal) && (job.State is JobState.Completed or JobState.Failed || e?.Type == "completed")) Status(job.Message);
                 completion.SetResult();
             }
@@ -410,8 +416,9 @@ public sealed partial class MainWindow : Window
     }
     private void UpdateEditState()
     {
-        var busy = aiBusy || current is not null && jobs.Any(j => j.SessionId == current.Id && j.State == JobState.Running);
+        var busy = aiBusy || transcriptReviewCompletion is not null || current is not null && jobs.Any(j => j.SessionId == current.Id && j.State == JobState.Running);
         OriginalEditor.IsEnabled = !busy; TranslationEditor.IsEnabled = !busy;
+        SubtitleEditorPane.IsEnabled = !busy;
         UpdateAiAvailability();
     }
     private void PlaybackTick(object? sender, object e)
@@ -451,6 +458,8 @@ public sealed partial class MainWindow : Window
         var operation = (sender as FrameworkElement)?.Tag as string ?? "summary";
         if (operation == "ask" && string.IsNullOrWhiteSpace(QuestionBox.Text)) throw new InvalidOperationException("请先输入问题。");
         var question = QuestionBox.Text;
+        if (operation == "correct" || operation == "ask" && ChatEditMode.IsChecked == true)
+        { await EditTranscriptAsync(operation == "correct" ? "校对明显识别错误、专有名词、英语标点和大小写，保留原意和数字。" : question); return; }
         var session = current!; var choice = SubtitleList.SelectedItems.OfType<SubtitleSegment>().OrderBy(s => s.Start).ToArray();
         var segments = choice.Length > 0 ? choice : session.Segments.ToArray();
         var runtimeSettings = Json.Read<AppSettings>(Json.Write(settings));
@@ -477,6 +486,7 @@ public sealed partial class MainWindow : Window
         var response = BeginChatResponse(session, operation, question);
         if (operation == "translate") session.Chat[^2].Content = $"将{translationScope}（{segments.Length} 条）翻译成{runtimeSettings.TargetLanguage}。";
         aiCancellation = new(); aiBusy = true; UpdateEditState(); var gateHeld = false;
+        TranscriptRevision? translationRun = null;
         BeginAiFeedback(sender as Button, operation, runtimeSettings.ModelProvider == LanguageModelKind.BuiltIn ? Path.GetFileNameWithoutExtension(runtimeSettings.GgufPath) : operation == "translate" ? runtimeSettings.TranslationModel : runtimeSettings.SummaryModel);
         try
         {
@@ -487,19 +497,26 @@ public sealed partial class MainWindow : Window
             using var remoteTranslation = operation == "translate" && runtimeSettings.CloudTranslation ? new TranslationApi(runtimeSettings.TranslationApiBase, SecretVault.Get("translation-api")) : null;
             var ai = new AiService((ILocalLanguageModelProvider?)remoteTranslation ?? provider, runtimeSettings);
             ShowChat();
-            if (operation is "translate" or "correct")
+            if (operation == "translate")
             {
-                Snapshot();
+                var before = session.Segments.Select(c => c.Copy()).ToArray();
+                segments = segments.Select(c => c.Copy()).ToArray();
+                var byId = segments.ToDictionary(c => c.Id);
+                translationRun = store.CreateTranscriptProposal(session, before, before, $"翻译{translationScope} → {runtimeSettings.TargetLanguage}", status: "Generating", kind: "Translation");
                 async Task Checkpoint(int count)
                 {
-                    store.SaveSession(session); SetAiFeedback($"{AiOperationName(operation)} · {count}/{segments.Length}", (double)count / segments.Length);
+                    translationRun.After = before.Select(c => byId.TryGetValue(c.Id, out var updated) ? updated.Copy() : c.Copy()).ToArray();
+                    translationRun.Events.Add(new(translationRun.Id, translationRun.Events.Count + 1, "translate", "completed", $"生成 {count}/{segments.Length} 条译文", DateTimeOffset.Now));
+                    store.UpdateTranscriptRun(translationRun); SetAiFeedback($"{AiOperationName(operation)} · {count}/{segments.Length}", (double)count / segments.Length);
                     if (operation == "translate") { response.Content = $"正在翻译{translationScope} · {count}/{segments.Length} 条 → {runtimeSettings.TargetLanguage}\n\n最新译文 [{Subtitles.FormatTime(segments[count - 1].Start, true)}]：\n\n{segments[count - 1].Translation}"; FollowChat(); }
                     await Task.CompletedTask;
                 }
-                if (operation == "translate") await ai.TranslateAsync(segments, Checkpoint, aiCancellation.Token);
-                else await ai.CorrectAsync(segments, Checkpoint, aiCancellation.Token);
-                response.Content = operation == "translate" ? $"已将{translationScope}（{segments.Length} 条）翻译成{runtimeSettings.TargetLanguage}，译文显示在原文下方。\n\n查看首条译文 [{Subtitles.FormatTime(segments[0].Start, true)}]：\n\n{segments[0].Translation}\n\n可从「导出」选择双语、仅原文或仅译文。" : $"已校对 {segments.Length} 条字幕。";
-                if (current?.Id == session.Id) { if (operation == "translate") SubtitleSearch.Text = ""; RefreshSubtitles(); if (operation == "translate") SubtitleList.ScrollIntoView(segments[0]); }
+                await ai.TranslateAsync(segments, Checkpoint, aiCancellation.Token);
+                translationRun.Status = TranscriptRevision.Hash(before) == TranscriptRevision.Hash(translationRun.After) ? "NoChanges" : "Pending"; store.UpdateTranscriptRun(translationRun);
+                if (gateHeld) { AiService.GpuGate.Release(); gateHeld = false; }
+                var applied = await PreviewTranscriptAsync(session, before, translationRun.After, "翻译字幕", $"{translationScope} · {segments.Length} 条 → {runtimeSettings.TargetLanguage}。允许后更新译文，原文与时间保留。", aiCancellation.Token, translationRun);
+                response.Content = applied ? $"已将{translationScope}（{segments.Length} 条）翻译成{runtimeSettings.TargetLanguage}，译文显示在原文下方。\n\n查看首条译文 [{Subtitles.FormatTime(segments[0].Start, true)}]：\n\n{segments[0].Translation}\n\n可从「导出」选择双语、仅原文或仅译文。" : "翻译提案未应用；可从字幕版本与提案查看 Diff、允许 / 拒绝。";
+                if (applied && current?.Id == session.Id) { SubtitleSearch.Text = ""; RefreshSubtitles(); var firstTranslated = session.Segments.FirstOrDefault(c => c.Id == segments[0].Id); if (firstTranslated is not null) SubtitleList.ScrollIntoView(firstTranslated); }
             }
             else
             {
@@ -520,9 +537,16 @@ public sealed partial class MainWindow : Window
             SetAiFeedback(AiOperationName(operation) + " · 已完成 ✓", 1);
             response.Status = operation == "ask" ? $"已核对全部 {session.Segments.Count} 条转写" : "已完成"; store.SaveSession(session);
         }
-        catch (OperationCanceledException) { response.Status = "已停止"; if (response.Content.Length == 0) response.Content = "本次生成已停止，已完成的内容已保留。"; store.SaveSession(session); SetAiFeedback(AiOperationName(operation) + " · 已停止，已完成内容保留"); }
-        catch (Exception ex) { response.Status = "生成失败"; response.Content = "生成未完成：" + ex.Message; store.SaveSession(session); SetAiFeedback(AiOperationName(operation) + " · 失败：" + ex.Message); }
+        catch (OperationCanceledException) { PreserveTranslationDraft(); response.Status = "已停止"; response.Content = translationRun is not null ? "翻译已停止，原字幕未变。已完成的译文提案保存在版本历史，可继续审阅。" : response.Content.Length == 0 ? "本次生成已停止，已完成的内容已保留。" : response.Content; store.SaveSession(session); SetAiFeedback(AiOperationName(operation) + " · 已停止，已完成内容保留"); }
+        catch (Exception ex) { PreserveTranslationDraft(failed: true); response.Status = "生成失败"; response.Content = "生成未完成：" + ex.Message + (translationRun is not null ? "\n已完成的翻译提案可在版本历史查看，原字幕未变。" : ""); store.SaveSession(session); SetAiFeedback(AiOperationName(operation) + " · 失败：" + ex.Message); }
         finally { if (gateHeld) AiService.GpuGate.Release(); aiBusy = false; aiCancellation.Dispose(); aiCancellation = null; EndAiFeedback(); UpdateEditState(); }
+        void PreserveTranslationDraft(bool failed = false)
+        {
+            if (translationRun?.Status != "Generating") return;
+            translationRun.Status = TranscriptRevision.Hash(translationRun.Before) == TranscriptRevision.Hash(translationRun.After) ? failed ? "Failed" : "Cancelled" : "Pending";
+            translationRun.Events.Add(new(translationRun.Id, translationRun.Events.Count + 1, "translate", failed ? "failed" : "cancelled", "未完成的翻译已停止，原字幕保留", DateTimeOffset.Now));
+            store.UpdateTranscriptRun(translationRun);
+        }
     });
     private void ShowMindMap(string json)
     {
@@ -595,7 +619,7 @@ public sealed partial class MainWindow : Window
     });
     private void Split_Click(object sender, RoutedEventArgs e) { if (selected is null || current is null) return; Snapshot(); var position = Player.MediaPlayer?.PlaybackSession.Position.TotalSeconds ?? 0; if (position <= selected.Start || position >= selected.End) position = (selected.Start + selected.End) / 2; var (left, right) = Subtitles.Split(selected, position); var index = current.Segments.IndexOf(selected); current.Segments.RemoveAt(index); current.Segments.Insert(index, right); current.Segments.Insert(index, left); TrackSegments(); RefreshSubtitles(); Dirty(); }
     private void Merge_Click(object sender, RoutedEventArgs e) { if (selected is null || current is null) return; var index = current.Segments.IndexOf(selected); if (index < 0 || index >= current.Segments.Count - 1) return; Snapshot(); var merged = Subtitles.Merge(selected, current.Segments[index + 1]); current.Segments.RemoveAt(index + 1); current.Segments[index] = merged; TrackSegments(); RefreshSubtitles(); Dirty(); }
-    private void Undo_Click(object sender, RoutedEventArgs e) { if (current is null || undo.Count == 0 || aiBusy) return; current.Segments = new(Json.Read<List<SubtitleSegment>>(undo.Pop())); TrackSegments(); RefreshSubtitles(); Dirty(); }
+    private void Undo_Click(object sender, RoutedEventArgs e) { if (current is null || undo.Count == 0 || aiBusy || transcriptReviewCompletion is not null) return; current.Segments = new(Json.Read<List<SubtitleSegment>>(undo.Pop())); TrackSegments(); RefreshSubtitles(); Dirty(); }
     private async void Replace_Click(object sender, RoutedEventArgs e) => await SafeAsync(async () =>
     {
         RequireSubtitles(); var find = new TextBox { Header = "查找", Text = SubtitleSearch.Text }; var replacement = new TextBox { Header = "替换为" }; var content = new StackPanel { Spacing = 12 }; content.Children.Add(find); content.Children.Add(replacement);

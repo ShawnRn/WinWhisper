@@ -27,6 +27,7 @@ public sealed class LiveTranscription(AppPaths paths)
                     var text = ChineseTypography.Apply(System.Text.RegularExpressions.Regex.Replace(result.Text, @"<\|[^|]*\|>", "").Trim());
                     if (text.Length > 0) segments.Add(new() { Start = clip.Offset + start / 16000d, End = clip.Offset + end / 16000d, Text = text });
                 }
+                if (request.Settings.RemoveEnglishFillers) segments = TranscriptEditing.RemoveFillers(segments);
                 await progress(new("segments", $"已识别至 {TimeSpan.FromSeconds(clip.Offset + samples.Length / 16000d):hh\\:mm\\:ss}", Segments: segments.ToArray(), Backend: recognizer.Backend, Device: recognizer.Device));
             }
             else

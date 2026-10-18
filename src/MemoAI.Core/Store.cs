@@ -2,7 +2,7 @@ using Microsoft.Data.Sqlite;
 
 namespace MemoAI.Core;
 
-public sealed class Store
+public sealed partial class Store
 {
     private readonly string connectionString;
     public Store(string dataRoot)
@@ -17,12 +17,13 @@ public sealed class Store
             CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,updated TEXT NOT NULL,payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1),payload TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS ix_sessions_updated ON sessions(updated DESC);
-            PRAGMA user_version=1;
+            PRAGMA user_version=2;
             """;
         command.ExecuteNonQuery();
+        InitializeTranscriptHistory(connection);
     }
     private SqliteConnection Open() { var c = new SqliteConnection(connectionString); c.Open(); return c; }
-    public void SaveSession(MediaSession session)
+    public void SaveSession(MediaSession session, bool recordVersion = true)
     {
         session.UpdatedAt = DateTimeOffset.Now;
         using var c = Open(); using var cmd = c.CreateCommand();
@@ -30,6 +31,7 @@ public sealed class Store
         cmd.Parameters.AddWithValue("$id", session.Id); cmd.Parameters.AddWithValue("$title", session.Title);
         cmd.Parameters.AddWithValue("$folder", session.Folder); cmd.Parameters.AddWithValue("$updated", session.UpdatedAt.ToString("O"));
         cmd.Parameters.AddWithValue("$payload", Json.Write(session)); cmd.ExecuteNonQuery();
+        if (recordVersion) SaveTranscriptCheckpoint(session, "保存字幕");
     }
     public List<MediaSession> GetSessions(string search = "", string? folder = null)
     {
@@ -50,7 +52,7 @@ public sealed class Store
     {
         using var c = Open(); using var cmd = c.CreateCommand();
         using var transaction = c.BeginTransaction(); cmd.Transaction = transaction;
-        cmd.CommandText = "DELETE FROM jobs WHERE json_extract(payload,'$.sessionId')=$id; DELETE FROM sessions WHERE id=$id";
+        cmd.CommandText = "DELETE FROM transcript_heads WHERE session_id=$id; DELETE FROM transcript_revisions WHERE session_id=$id; DELETE FROM jobs WHERE json_extract(payload,'$.sessionId')=$id; DELETE FROM sessions WHERE id=$id";
         cmd.Parameters.AddWithValue("$id", id); cmd.ExecuteNonQuery(); transaction.Commit();
     }
     public List<JobRecord> GetSessionJobs(string id)

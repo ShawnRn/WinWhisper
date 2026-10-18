@@ -8,6 +8,7 @@
 | WinUI 布局、G2、主题、导航与交互 | [原生界面](native-ui.md) |
 | 模型安装、推理后端、录音与数据生命周期 | [模型与媒体](models-and-media.md) |
 | 断句、标点、翻译、问答和导出 | [字幕与 AI](subtitles-and-ai.md) |
+| 字幕 Agent、工具、Diff、允许 / 拒绝及持久回滚 | [字幕 Agent 与版本](transcript-agent.md) |
 | 隔离测试、真实音频及 Computer Use | [验证](verification.md) |
 | Universal / x64 / ARM64 安装与预发布 | [发布](release.md) |
 

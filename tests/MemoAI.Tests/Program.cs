@@ -175,6 +175,87 @@ await Test("Sentence boundaries use original word times and reject fabricated al
     var suffixCue = new SubtitleSegment { Start = 30, End = 32, Text = "I’ m here it’ s ready", Words = splitSuffix };
     Check(SentenceSegmentation.HasReliableWords(suffixCue) && SentenceSegmentation.Optimize([suffixCue]).Single().Text == "I’m here it’s ready", "断句重建文本重新引入空格或丢失对齐");
 }));
+await Test("English filler cleanup preserves content, real word times and literal examples", () => Sync(() =>
+{
+    var cue = new SubtitleSegment { Start = 0, End = 4, Text = "Um, hello uh world.", Translation = "旧译文", Words = [new("Um,", 0, .3), new(" hello", .5, 1), new(" uh", 1.2, 1.5), new(" world.", 2, 3)] };
+    var clean = TranscriptEditing.RemoveFillers([cue]).Single();
+    Check(clean.Text == "hello world." && clean.Translation == "" && clean.Start == 0 && clean.End == 4 && clean.Words.Select(w => (w.Start, w.End)).SequenceEqual(new[] { (.5, 1d), (2d, 3d) }) && SentenceSegmentation.HasReliableWords(clean), "清理引入虚假时间或丢词");
+    Check(cue.Text.StartsWith("Um") && cue.Translation.Length > 0, "预览前修改了原对象");
+    Check(TranscriptEditing.CleanFillers("umami umbrella Uhuru like well right") == "umami umbrella Uhuru like well right", "删除了有意义的词");
+    Check(TranscriptEditing.CleanFillers("Say ‘um’ here.") == "Say ‘um’ here." && TranscriptEditing.CleanFillers("`um` uh") == "`um` uh", "误改字面示例或代码");
+    Check(TranscriptEditing.RemoveFillers([new() { Start = 0, End = 1, Text = "uh, um." }]).Count == 0, "未清理纯语气词字幕");
+}));
+await Test("AI transcript patches validate all IDs and preserve timing without inventing alignment", () => Sync(() =>
+{
+    var cue = new SubtitleSegment { Id = "a", Start = 10, End = 12, Text = "hello texas", Translation = "旧译文", Words = [new("hello", 10, 11), new(" texas", 11, 12)] };
+    var punctuation = TranscriptEditing.ParseEdits([cue], "{\"edits\":[{\"id\":\"a\",\"text\":\"Hello Texas!\"}]}", true).Single();
+    Check(punctuation.Start == 10 && punctuation.End == 12 && SentenceSegmentation.HasReliableWords(punctuation), "标点恢复丢失实际时间");
+    var spelling = TranscriptEditing.ParseEdits([cue], "{\"edits\":[{\"id\":\"a\",\"text\":\"Hello California!\",\"start\":999}]}", false).Single();
+    Check(spelling.Start == 10 && spelling.End == 12 && spelling.Words.Count == 0 && spelling.Translation == "", "纠错伪造了词时间或保留失效译文");
+    foreach (var invalid in new[] { "{\"edits\":[]}", "{\"edits\":[{\"id\":\"wrong\",\"text\":\"hello\"}]}", "{\"edits\":[{\"id\":\"a\",\"text\":\"\"}]}" })
+    { var rejected = false; try { TranscriptEditing.ParseEdits([cue], invalid, false); } catch (InvalidDataException) { rejected = true; } Check(rejected, "接受了不完整 / 错误补丁"); }
+    var changedWords = false; try { TranscriptEditing.ParseEdits([cue], "{\"edits\":[{\"id\":\"a\",\"text\":\"hello California\"}]}", true); } catch (InvalidDataException) { changedWords = true; }
+    Check(changedWords && cue.Text == "hello texas", "标点模式允许改写词语或提前写入");
+}));
+await Test("AI transcript editing covers every batch and cancellation keeps original subtitles", async () =>
+{
+    var source = Enumerable.Range(0, 70).Select(i => new SubtitleSegment { Text = $"hello item {i}", Start = i * 2, End = i * 2 + 1 }).ToArray();
+    var model = new TranscriptFixtureModel(); var output = await TranscriptEditing.ProposeAsync(model, new(), source, "punctuate", true, null, CancellationToken.None);
+    Check(output.Count == 70 && model.Seen.SequenceEqual(source.Select(s => s.Id)) && output.All(s => s.Text.EndsWith('.')), "未覆盖全文或遗漏补丁");
+    Check(source.All(s => !s.Text.EndsWith('.')), "预览生成提前改写原文");
+    using var stop = new CancellationTokenSource(); model = new TranscriptFixtureModel { Stop = stop };
+    var cancelled = false; try { await TranscriptEditing.ProposeAsync(model, new(), source, "punctuate", true, null, stop.Token); } catch (OperationCanceledException) { cancelled = true; }
+    Check(cancelled && source.All(s => !s.Text.EndsWith('.')), "取消没有保留原文");
+});
+await Test("Transcript word diffs preserve context and highlight only changed words", () => Sync(() =>
+{
+    var diff = TranscriptTextDiff.Compare("we are here at spacex uh rocket test site", "we are here at SpaceX rocket test site");
+    Check(string.Concat(diff.Before.Select(p => p.Text)) == "we are here at spacex uh rocket test site" && string.Concat(diff.After.Select(p => p.Text)) == "we are here at SpaceX rocket test site", "Diff 丢失原始文字");
+    Check(string.Concat(diff.After.Where(p => p.Changed).Select(p => p.Text)) == "SpaceX" && diff.Before.Where(p => p.Changed).All(p => !p.Text.Contains("rocket")), "整句被标为修改");
+    foreach (var pair in new[] { ("你好世界 👩🏽‍💻", "你好朋友 👩🏽‍💻"), ("It’s local.", "It’s local!"), ("one one two", "one two"), ("", "新增"), ("删除", ""), ("same", "same") })
+    {
+        var compared = TranscriptTextDiff.Compare(pair.Item1, pair.Item2);
+        Check(string.Concat(compared.Before.Select(p => p.Text)) == pair.Item1 && string.Concat(compared.After.Select(p => p.Text)) == pair.Item2, "字符、重复词或空内容 Diff 不可重建");
+        Check(!compared.Before.Concat(compared.After).Any(p => p.Changed && p.Text.Contains("👩")), "未改变的 emoji 被拆分");
+    }
+    var longDiff = TranscriptTextDiff.Compare("X " + new string('中', 2500) + " end", "Y " + new string('文', 2500) + " end");
+    Check(string.Concat(longDiff.After.Select(p => p.Text)).EndsWith(" end") && longDiff.After[^1] is { Changed: false, Text: " end" }, "大输入没有保留公共后缀");
+}));
+await Test("Transcript proposals persist, allow/reject is atomic and stale edits cannot overwrite", () => Sync(() =>
+{
+    var dataRoot = Path.Combine(run, "revision-history"); var db = new Store(dataRoot);
+    var media = new MediaSession { Segments = [new() { Start = 0, End = 2, Text = "before", Translation = "原译文" }] }; db.SaveSession(media);
+    var before = media.Segments.Select(c => c.Copy()).ToArray(); var after = before.Select(c => { var copy = c.Copy(); copy.Text = "after"; copy.Translation = ""; return copy; }).ToArray();
+    var proposal = db.CreateTranscriptProposal(media, before, after, "fixture edit");
+    var stale = db.CreateTranscriptProposal(media, before, after, "parallel proposal");
+    var aba = db.CreateTranscriptProposal(media, before, after, "ABA guard");
+    db = new Store(dataRoot); Check(db.GetTranscriptVersion(media.Id, proposal.Id).Status == "Pending" && db.GetSession(media.Id)!.Segments[0].Text == "before", "重启丢失提案或预览提前写入");
+    var rejected = db.CreateTranscriptProposal(media, before, after, "reject fixture"); db.DecideTranscriptProposal(media, rejected.Id, false); db.DecideTranscriptProposal(media, rejected.Id, false);
+    Check(db.GetSession(media.Id)!.Segments[0].Text == "before" && db.GetTranscriptVersion(media.Id, rejected.Id).Status == "Rejected", "拒绝修改了原文");
+    db.DecideTranscriptProposal(media, proposal.Id, true); var accepted = db.GetSession(media.Id)!;
+    Check(accepted.Segments[0].Text == "after" && db.GetTranscriptVersion(media.Id, proposal.Id).Status == "Applied", "版本与字幕没有一同提交");
+    var conflict = false; try { db.DecideTranscriptProposal(accepted, stale.Id, true); } catch (InvalidOperationException) { conflict = true; }
+    Check(conflict && db.GetSession(media.Id)!.Segments[0].Text == "after", "旧提案覆盖了新字幕"); db.DecideTranscriptProposal(accepted, stale.Id, false);
+    var rollback = db.CreateTranscriptProposal(accepted, accepted.Segments.ToArray(), before, "rollback fixture", kind: "Rollback");
+    db.DecideTranscriptProposal(accepted, rollback.Id, true);
+    Check(db.GetSession(media.Id)!.Segments[0].Text == "before" && db.GetTranscriptVersions(media.Id).Any(v => v.Id == proposal.Id && v.Status == "Applied") && rollback.ParentId == proposal.Id, "回滚丢失历史或没有关联父版本");
+    var abaRejected = false; try { db.DecideTranscriptProposal(db.GetSession(media.Id)!, aba.Id, true); } catch (InvalidOperationException) { abaRejected = true; }
+    Check(abaRejected && db.GetTranscriptHead(media.Id) == rollback.Id, "内容相同但父版本不同的过期提案被应用");
+    var rows = TranscriptDiff.Build(before, after); Check(rows.Count == 1 && rows[0].Before.Contains("before") && rows[0].After.Contains("after"), "缺失原文 / 译文 diff");
+    db.DeleteSession(media.Id); Check(db.GetTranscriptVersions(media.Id).Count == 0, "移除媒体遗留了版本字幕数据");
+}));
+await Test("Transcript Agent tools are bounded, scoped and preserve full edit coverage", async () =>
+{
+    var source = Enumerable.Range(0, 23).Select(i => new SubtitleSegment { Text = $"item {i}", Start = i * 2, End = i * 2 + 1 }).ToArray();
+    var model = new HarnessFixtureModel(); var harness = new TranscriptAgentHarness();
+    var result = await harness.RunAsync(model, new(), source, "punctuate", null, CancellationToken.None);
+    Check(result.Count == 23 && model.Editor.Seen.SequenceEqual(source.Select(c => c.Id)), "Agent 未处理全文");
+    Check(harness.Events.Any(e => e.Tool == "search_transcript") && harness.Events.Any(e => e.State == "rejected") && harness.Events.Select(e => e.Sequence).SequenceEqual(Enumerable.Range(1, harness.Events.Count)) && harness.Events.All(e => e.RunId == harness.RunId), "能力边界或事件关联错误");
+    var db = new Store(Path.Combine(run, "agent-audit")); var media = new MediaSession { Segments = new(source) }; db.SaveSession(media);
+    var record = db.CreateTranscriptProposal(media, source, [], "agent fixture", status: "Generating", kind: "Agent"); record.Events = harness.Events;
+    record.Status = "Cancelled"; db.UpdateTranscriptRun(record);
+    Check(new Store(Path.Combine(run, "agent-audit")).GetTranscriptVersion(media.Id, record.Id).Events.Count == harness.Events.Count && db.GetSession(media.Id)!.Segments.Count == 23, "停止后丢失运行记录或修改字幕");
+});
 await Test("Translation API sends only explicit text and does not leak error bodies", async () =>
 {
     var fake = new TranslationHandler(); using var api = new TranslationApi("https://example.invalid/v1", "fixture-secret", fake);
@@ -363,6 +444,22 @@ await Test("GPU evidence rejects provider fallback and native inference errors",
     Check(SherpaRuntimes.ReadProfile(folder, "cuda") == (1, 1), "GPU / CPU 执行次数错误");
     Check(SherpaRuntimes.IsNativeFailure("Non-zero status code returned while running Conv node") && SherpaRuntimes.IsNativeFailure("cuDNN is unavailable") && !SherpaRuntimes.IsNativeFailure("Some nodes were not assigned to the preferred execution providers"), "原生失败检测错误");
 }));
+if (args.Contains("--transcript-edit"))
+{
+    await Test("Real local AI returns validated transcript punctuation patches with word times", async () =>
+    {
+        var options = new AppSettings(); var paths = new AppPaths(Path.Combine(run, "real-edit"), Path.Combine(root, "engines"));
+        using var model = new LocalLanguageModelProvider(paths, options); using var stop = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        var source = new[] { new SubtitleSegment { Id = "line-1", Start = 0, End = 2, Text = "hello everyone", Words = [new("hello", 0, 1), new(" everyone", 1, 2)] }, new SubtitleSegment { Id = "line-2", Start = 2, End = 4, Text = "welcome to texas", Words = [new("welcome", 2, 3), new(" to", 3, 3.5), new(" texas", 3.5, 4)] } };
+        var edited = await TranscriptEditing.ProposeAsync(model, options, source, "Restore English punctuation and capitalization only.", true, null, stop.Token);
+        Check(edited.Count == source.Length && edited.All(SentenceSegmentation.HasReliableWords) && source[0].Text == "hello everyone", "本地模型补丁丢失词时间或提前修改原文");
+        await File.WriteAllTextAsync(Path.Combine(run, "real-transcript-edit.json"), Json.Write(edited));
+        var harness = new TranscriptAgentHarness();
+        var agentEdited = await harness.RunAsync(model, options, source, "Correct capitalization and punctuation only, preserving all words and numbers. Generate an editing preview.", null, stop.Token);
+        Check(agentEdited.Count == source.Length && harness.Events.Any(e => e.Tool == "propose_edits" && e.State == "completed"), "真实本地 Agent 未生成有效提案");
+        await File.WriteAllTextAsync(Path.Combine(run, "real-transcript-agent.json"), Json.Write(new { events = harness.Events, edited = agentEdited }));
+    });
+}
 var gpuTest = args.FirstOrDefault(a => a.StartsWith("--asr-gpu="))?[10..];
 if (gpuTest is not null)
 {
@@ -600,6 +697,28 @@ await File.WriteAllTextAsync(Path.Combine(run, "results.json"), Json.Write(resul
 Console.WriteLine($"\n{results.Count - failures}/{results.Count} passed. Report: {run}");
 Environment.ExitCode = failures == 0 ? 0 : 1;
 
+sealed class HarnessFixtureModel : ILocalLanguageModelProvider
+{
+    private int decisions; public TranscriptFixtureModel Editor = new();
+    public Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken ct) => Editor.ListModelsAsync(ct);
+    public Task<string> GenerateAsync(string model, string system, string prompt, Func<string, Task>? delta, CancellationToken ct)
+    {
+        if (!system.Contains("Choose exactly ONE tool")) return Editor.GenerateAsync(model, system, prompt, delta, ct);
+        return Task.FromResult(++decisions switch { 1 => "{\"tool\":\"read_transcript\",\"offset\":0}", 2 => "{\"tool\":\"search_transcript\",\"query\":\"item\"}", 3 => "{\"tool\":\"shell\"}", _ => "{\"tool\":\"propose_edits\"}" });
+    }
+}
+sealed class TranscriptFixtureModel : ILocalLanguageModelProvider
+{
+    public List<string> Seen = []; public CancellationTokenSource? Stop;
+    public Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<string>>(["fixture"]);
+    public Task<string> GenerateAsync(string model, string system, string prompt, Func<string, Task>? delta, CancellationToken ct)
+    {
+        using var json = JsonDocument.Parse(prompt); var rows = json.RootElement.GetProperty("transcript").EnumerateArray().ToArray();
+        Seen.AddRange(rows.Select(r => r.GetProperty("id").GetString()!));
+        if (Seen.Count > 18) Stop?.Cancel();
+        return Task.FromResult(Json.Write(new { edits = rows.Select(r => new { id = r.GetProperty("id").GetString(), text = r.GetProperty("text").GetString() + "." }) }));
+    }
+}
 sealed class FakeModel : ILocalLanguageModelProvider
 {
     public int Calls;

@@ -78,27 +78,33 @@ public static class SentenceSegmentation
         {
             if (group.Count == 0) return;
             var words = group.SelectMany(c => c.Words).ToArray();
-            var first = 0;
-            while (first < words.Length)
+            // Choose the whole sequence of boundaries, rather than greedily
+            // taking the strongest pause in the next nine seconds.
+            var costs = new double[words.Length + 1]; var cuts = new int[words.Length];
+            for (var first = words.Length - 1; first >= 0; first--)
             {
-                var best = first; var bestScore = double.NegativeInfinity; var chars = 0;
+                costs[first] = double.PositiveInfinity; var chars = 0;
                 for (var i = first; i < words.Length; i++)
                 {
                     chars += words[i].Text.Length; var duration = words[i].End - words[first].Start;
-                    if (i > first && (chars > 112 || duration > 9)) break;
+                    if (i > first && (chars > 96 || duration > 7)) break;
                     var last = i == words.Length - 1;
                     var gap = last ? 0 : words[i + 1].Start - words[i].End;
                     var natural = EndsSentence(words[i].Text);
                     var pause = gap >= .45 || silences?.Any(s => s.End - s.Start >= .3 && s.Start <= words[i].End + .15 && s.End >= words[i].End && (last || s.End <= words[i + 1].Start + .15)) == true;
-                    var score = (last ? 110 : natural ? 100 : pause ? 65 : Regex.IsMatch(words[i].Text, "[,;:]$|[，；：]$") ? 35 : 0) + Math.Min(duration, 5) * 2;
-                    if (duration < 1.2 && !last) score -= 60;
-                    if (Regex.IsMatch(words[i].Text, @"\b(?:a|an|the|of|to|and|or|at|in|for|with|my|your|our|is|are|was|were)$", RegexOptions.IgnoreCase)) score -= 45;
-                    if (score > bestScore) { bestScore = score; best = i; }
-                    if ((natural || gap >= .8) && duration >= 1.2) break;
+                    var cost = 12 + Math.Pow((duration - 4) / 2, 2) + Math.Max(0, chars - 76) * .3;
+                    cost += natural || last ? 0 : pause ? 5 : Regex.IsMatch(words[i].Text, "[,;:]$|[，；：]$") ? 9 : 23;
+                    if (duration < 1.2 && !last) cost += 35;
+                    if (!natural && !last && Regex.IsMatch(words[i].Text, @"\b(?:a|an|the|of|to|and|or|at|in|for|with|my|your|our|is|are|was|were|that|this|these|those)$", RegexOptions.IgnoreCase)) cost += 40;
+                    if (cost + costs[i + 1] < costs[first]) { costs[first] = cost + costs[i + 1]; cuts[first] = i + 1; }
+                    if (natural && duration >= 1.2 || gap >= .8) break;
                 }
-                var selected = words[first..(best + 1)];
+            }
+            for (var first = 0; first < words.Length;)
+            {
+                var next = Math.Max(first + 1, cuts[first]); var selected = words[first..next];
                 output.Add(new() { Start = selected[0].Start, End = selected[^1].End, Text = ChineseTypography.Apply(string.Concat(selected.Select(w => w.Text)).Trim()), Speaker = group[0].Speaker, Words = [..selected] });
-                first = best + 1;
+                first = next;
             }
             group.Clear();
         }

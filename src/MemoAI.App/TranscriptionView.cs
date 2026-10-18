@@ -60,7 +60,7 @@ public sealed partial class MainWindow
             TranscriptionBackend.SelectedIndex = (int)options.Backend;
             TranscriptionThreads.Value = options.Threads; TranscriptionBeam.Value = options.BeamSize; TranscriptionChunk.Value = options.ChunkSeconds;
             TranscriptionMaxLength.Value = options.MaxLength; TranscriptionTemperature.Value = options.Temperature;
-            TranscriptionVad.IsChecked = options.EnableVad; TranscriptionPrompt.Text = options.Prompt;
+            TranscriptionVad.IsChecked = options.EnableVad; TranscriptionPrompt.Text = options.Prompt; TranscriptionFillers.IsChecked = options.RemoveEnglishFillers;
             UpdateTranscriptionCapabilities();
             UpdateTranscriptionHeader();
         }
@@ -70,7 +70,7 @@ public sealed partial class MainWindow
     {
         ModelPath = (TranscriptionModel.SelectedItem as ModelChoice)?.Path ?? "",
         Language = (TranscriptionLanguage.SelectedItem as LanguageChoice)?.Code ?? "auto",
-        Backend = (ComputeBackend)Math.Max(0, TranscriptionBackend.SelectedIndex), EnableVad = TranscriptionVad.IsChecked == true,
+        Backend = (ComputeBackend)Math.Max(0, TranscriptionBackend.SelectedIndex), EnableVad = TranscriptionVad.IsChecked == true, RemoveEnglishFillers = TranscriptionFillers.IsChecked == true,
         Threads = (int)TranscriptionThreads.Value, BeamSize = (int)TranscriptionBeam.Value, ChunkSeconds = (int)TranscriptionChunk.Value,
         MaxLength = (int)TranscriptionMaxLength.Value, Temperature = TranscriptionTemperature.Value, Prompt = TranscriptionPrompt.Text.Trim()
     };
@@ -120,6 +120,7 @@ public sealed partial class MainWindow
     private async Task StartTranscriptionAsync()
     {
         RequireSession();
+        if (transcriptReviewCompletion is not null || aiBusy) throw new InvalidOperationException("请先完成当前字幕提案或 AI 任务。");
         if (jobs.Any(j => j.SessionId == current!.Id && j.Operation.StartsWith("transcribe", StringComparison.Ordinal) && j.State is JobState.Queued or JobState.Running)) { RefreshTranscriptionProgress(); return; }
         var options = ReadTranscriptionOptions();
         _ = options.ApplyTo(settings);
