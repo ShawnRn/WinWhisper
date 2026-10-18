@@ -22,6 +22,15 @@ public sealed partial class MainWindow
             await AdvanceFirstRunAsync(); FirstRunHost.UpdateLayout();
             result["firstRunWorkerHardwareAndDependencyProbe"] = setupStep == 1 && setupReport is { MemoryBytes: > 0, LogicalCores: > 0, DspMillionSamplesPerSecond: > 0 } && setupReport.Dependencies.Count(d => d.Ready) >= 2;
             result["firstRunTechnicalDetailsAreCollapsedByDefault"] = setupAdvancedOptions?.IsExpanded == false;
+            var detectedSetup = setupReport;
+            setupLanguage = "en"; setupModelId = "whisper-small"; setupCuda = true;
+            PreviousFirstRun(); FirstRunHost.UpdateLayout();
+            result["firstRunPreviousReturnsToWelcome"] = setupStep == 0 && Descendants(FirstRunHost).OfType<TextBlock>().Any(t => t.Text.Contains("👋"));
+            await AdvanceFirstRunAsync(); FirstRunHost.UpdateLayout();
+            result["firstRunForwardPreservesDetectionAndChoices"] = setupStep == 1 && ReferenceEquals(setupReport, detectedSetup) && setupLanguage == "en" && setupModelId == "whisper-small" && setupCuda;
+            setupBusy = true; PreviousFirstRun();
+            result["firstRunCannotGoBackDuringPreparation"] = setupStep == 1;
+            setupBusy = false;
             setupAdvancedOptions!.IsExpanded = true; FirstRunHost.UpdateLayout(); await Task.Delay(400);
             var expanderContent = Descendants(setupAdvancedOptions).OfType<Microsoft.UI.Xaml.Controls.Border>().Single(n => n.Name == "ExpanderContent");
             var expanderPaint = Descendants(expanderContent).OfType<ContinuousSurface>().Single(n => n.Name == "G2_ExpanderContent");
@@ -31,6 +40,8 @@ public sealed partial class MainWindow
             result["firstRunProbeDiagnostics"] = setupError.Length > 0 ? setupError : Json.Write(setupReport);
             setupStep = 2; RenderFirstRun(); FirstRunHost.UpdateLayout();
             result["firstRunPausedDownloadHasRetryAndKeepsOriginalSettings"] = setupProgressText?.Text.Contains("暂停") == true && settings.TranscriptionModelPath == "";
+            PreviousFirstRun();
+            result["firstRunPausedDownloadReturnsToModelSelection"] = setupStep == 1 && setupModelId == "whisper-small";
             FinishFirstRun("skipped");
             result["firstRunSkipPersistsAndRestoresWorkspace"] = !setupOpen && Sidebar.IsEnabled && !FirstRunSetup.NeedsSetup(paths.DataRoot);
             ollamaModels = ["test-translation", "test-summary-a", ..Enumerable.Range(0, 12).Select(i => $"fixture-model-{i}"), "test-summary-b"];

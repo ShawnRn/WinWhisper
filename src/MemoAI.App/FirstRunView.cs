@@ -36,7 +36,15 @@ public sealed partial class MainWindow
         layout.RowDefinitions.Add(new() { Height = GridLength.Auto }); layout.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); layout.RowDefinitions.Add(new() { Height = GridLength.Auto });
         var header = new StackPanel { Spacing = 8 };
         header.Children.Add(SetupText($"开始使用 WinWhisper · {Math.Min(setupStep + 1, 3)} / 3", 13));
-        header.Children.Add(new TextBlock { Text = setupStep switch { 0 => "欢迎使用 WinWhisper", 1 => "已经为你选好了", 2 => "准备你的转写工具", _ => "一切就绪" }, FontSize = 30, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        var title = new TextBlock { Text = setupStep switch { 0 => "欢迎使用 WinWhisper", 1 => "下面是为你选好的模型", 2 => "准备你的转写工具", _ => "一切就绪" }, FontSize = 30, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+        if (setupStep == 0)
+        {
+            var welcome = new Grid { ColumnSpacing = 8 };
+            welcome.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); welcome.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+            welcome.Children.Add(new TextBlock { Text = "👋", FontFamily = new FontFamily("Segoe UI Emoji"), FontSize = 32, FontWeight = Microsoft.UI.Text.FontWeights.Normal, Padding = new Thickness(6), LineHeight = 48, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, VerticalAlignment = VerticalAlignment.Center });
+            Grid.SetColumn(title, 1); welcome.Children.Add(title); header.Children.Add(welcome);
+        }
+        else header.Children.Add(title);
         layout.Children.Add(header);
         var body = new StackPanel { Spacing = 16 };
         var scroll = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }; Grid.SetRow(scroll, 1); layout.Children.Add(scroll);
@@ -87,11 +95,6 @@ public sealed partial class MainWindow
             body.Children.Add(SetupText("下载完成后会自动准备好。你可以随时暂停，下次继续。", 16));
             setupProgressText = SetupText(setupBusy ? "正在准备…" : "已暂停；已下载的内容保留，点击继续。"); body.Children.Add(setupProgressText);
             setupProgressBar = new ProgressBar { IsIndeterminate = setupBusy }; body.Children.Add(setupProgressBar);
-            if (!setupBusy)
-            {
-                var change = new HyperlinkButton { Content = "返回调整模型", Padding = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Left };
-                change.Click += (_, _) => { setupStep = 1; setupError = ""; RenderFirstRun(); }; body.Children.Add(change);
-            }
         }
         else if (setupStep == 3)
         {
@@ -101,7 +104,14 @@ public sealed partial class MainWindow
         if (setupError.Length > 0) body.Children.Add(new InfoBar { IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Warning, Message = setupError });
         var footer = new Grid { ColumnSpacing = 12 }; footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var later = new Button { Content = setupBusy ? "暂停" : setupStep == 3 ? "" : "稍后设置", Visibility = setupStep == 3 ? Visibility.Collapsed : Visibility.Visible };
-        later.Click += (_, _) => { if (setupBusy) setupCancellation?.Cancel(); else FinishFirstRun("skipped"); }; footer.Children.Add(later);
+        later.Click += (_, _) => { if (setupBusy) setupCancellation?.Cancel(); else FinishFirstRun("skipped"); };
+        var backActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
+        if (setupStep is 1 or 2)
+        {
+            var previous = new Button { Content = "上一步", IsEnabled = !setupBusy };
+            previous.Click += (_, _) => PreviousFirstRun(); backActions.Children.Add(previous);
+        }
+        backActions.Children.Add(later); footer.Children.Add(backActions);
         var next = new Button { Content = setupBusy ? "正在准备…" : setupStep switch { 0 => "开始设置", 1 => "一键准备", 2 => "继续", _ => "开始使用" }, IsEnabled = !setupBusy, Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
         next.Click += async (_, _) => await AdvanceFirstRunAsync(); Grid.SetColumn(next, 2); footer.Children.Add(next);
         Grid.SetRow(footer, 2); layout.Children.Add(footer); FirstRunHost.Children.Add(layout);
@@ -111,6 +121,11 @@ public sealed partial class MainWindow
         var panel = new StackPanel { Spacing = 9 }; var heading = SetupText(title, 17); heading.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
         panel.Children.Add(heading); panel.Children.Add(SetupText(detail));
         return new ContinuousSurface { Style = (Style)Application.Current.Resources["Card"], Padding = new Thickness(20), Child = panel };
+    }
+    private void PreviousFirstRun()
+    {
+        if (setupBusy || setupStep is not (1 or 2)) return;
+        setupStep--; setupError = ""; RenderFirstRun();
     }
     private async Task AdvanceFirstRunAsync()
     {
@@ -122,8 +137,12 @@ public sealed partial class MainWindow
             if (setupStep == 0)
             {
                 RenderFirstRun();
-                setupReport = await FirstRunSetup.InspectInWorkerAsync(paths, cancellation.Token);
-                setupModelId = FirstRunSetup.Recommend(setupReport, setupLanguage).ModelId; setupStep = 1;
+                if (setupReport is null)
+                {
+                    setupReport = await FirstRunSetup.InspectInWorkerAsync(paths, cancellation.Token);
+                    setupModelId = FirstRunSetup.Recommend(setupReport, setupLanguage).ModelId;
+                }
+                setupStep = 1;
             }
             else
             {

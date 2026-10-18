@@ -4,6 +4,10 @@
 
 普通用户默认只看到素材语言、用途明确的推荐方案、下载大小和「一键准备」。CPU / 显卡 / 运算分数、手动模型选择、CUDA、来源许可及依赖清单统一收进默认折叠的「高级选项」，不能把硬件诊断报告当作入门页面。用户不必理解后端或模型量化即可完成设置。
 
+欢迎标题旁独立排版系统彩色 👋 emoji，使用普通字重、独立行高和四周留白，避免受标题行高裁切；推荐页标题为「下面是为你选好的模型」。标题允许换行，适应较窄窗口。
+
+推荐页及已暂停的下载页提供「上一步」。返回欢迎页再继续保留本次检测结果、语言和模型选择；下载进行时禁用返回，先暂停后才能调整。完成后不再返回修改已应用的配置。
+
 检测通过 `WinWhisper.Worker --setup-probe` 运行，有总超时与取消。CPU 来自系统注册表，物理 / 可用内存来自 GlobalMemoryStatusEx，GPU 来自 DXGI EnumAdapters1 / GetDesc1，排除软件适配器；共享内存仅是上限，不能与独立显存或物理内存相加。DXGI ABI 参考 [Microsoft 文档](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgifactory1-enumadapters1) 及 [适配器结构](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/ns-dxgi-dxgi_adapter_desc1)。ARM64 和 x64 的结构与进程各自匹配。
 
 短时向量能量运算测试约 0.75 秒，只是 CPU DSP 估计，不代表模型转写速度或 GPU 成功执行。推荐结合总内存、当前可用内存、GPU 容量和素材语言；内存不足先 tiny，常规 small，容量足够可选 turbo，英语可选 Parakeet v3。用户可改选；不按显卡品牌猜模型语言或声称 CUDA 已验证。
