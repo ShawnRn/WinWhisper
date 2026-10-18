@@ -82,7 +82,7 @@
         <Grid ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
          <ComboBox x:Name="TranscriptionModel" Header="转写模型" HorizontalAlignment="Stretch" SelectionChanged="TranscriptionOption_Changed" DisplayMemberPath="Name"/>
          <ComboBox x:Name="TranscriptionLanguage" Grid.Column="1" Header="音频语言" HorizontalAlignment="Stretch" SelectionChanged="TranscriptionOption_Changed" DisplayMemberPath="Name"/>
-         <ComboBox x:Name="TranscriptionBackend" Grid.Column="2" Header="硬件加速" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="TranscriptionOption_Changed"><ComboBoxItem Content="自动选择"/><ComboBoxItem Content="CUDA"/><ComboBoxItem Content="Vulkan"/><ComboBoxItem Content="CPU"/></ComboBox>
+         <ComboBox x:Name="TranscriptionBackend" Grid.Column="2" Header="硬件加速" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="TranscriptionOption_Changed"><ComboBoxItem Content="自动选择"/><ComboBoxItem Content="CUDA"/><ComboBoxItem Content="Vulkan"/><ComboBoxItem Content="CPU"/><ComboBoxItem Content="DirectML"/></ComboBox>
          <Button Grid.Column="3" Content="模型商店" VerticalAlignment="Bottom" Click="ModelStore_Click"/>
         </Grid>
         <Expander Header="高级参数" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">

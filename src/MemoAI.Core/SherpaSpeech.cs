@@ -14,7 +14,20 @@ public sealed class SherpaSpeech(AppPaths paths) : ISpeechSynthesizer
         var config = new OfflineTtsConfig();
         config.Model.Kokoro.Model = settings.TtsModelPath; config.Model.Kokoro.Voices = settings.TtsVoicesPath;
         config.Model.Kokoro.Tokens = settings.TtsTokensPath; config.Model.Kokoro.DataDir = settings.TtsDataDirectory;
-        config.Model.Kokoro.Lexicon = settings.TtsLexiconPath; config.Model.NumThreads = 2; config.Model.Provider = "cpu";
+        config.Model.Kokoro.Lexicon = settings.TtsLexiconPath; config.Model.NumThreads = 2;
+        config.Model.Provider = SherpaRuntimes.ProfilingProvider(request.WorkDirectory, out var profile);
+        var backend = SherpaRuntimes.Provider == "cpu" ? "Cpu" : SherpaRuntimes.Provider == "cuda" ? "Cuda" : "DirectML";
+        var device = AppPaths.Rid + " CPU";
+        if (profile is not null)
+        {
+            await progress(new("progress", "验证配音 GPU…", Backend: "Pending"));
+            using (var probe = new OfflineTts(config))
+            {
+                var audio = probe.GenerateWithConfig("Hello.", new OfflineTtsGenerationConfig { Sid = settings.TtsVoice, Speed = 1 }, new OfflineTtsCallbackProgressWithArg((_, _, _, _) => ct.IsCancellationRequested ? 0 : 1));
+                ct.ThrowIfCancellationRequested();
+            }
+            device = SherpaRuntimes.CompleteProof(profile); config.Model.Provider = SherpaRuntimes.Provider;
+        }
         using var tts = new OfflineTts(config);
         var segments = request.InputSegments?.OrderBy(s => s.Start).ToArray() ?? [new SubtitleSegment { Start = 0, End = double.MaxValue, Text = request.Text ?? "" }];
         if (segments.Length == 0) throw new InvalidOperationException("没有可以合成的字幕。");
@@ -28,7 +41,7 @@ public sealed class SherpaSpeech(AppPaths paths) : ISpeechSynthesizer
             ct.ThrowIfCancellationRequested(); var s = segments[i];
             var text = string.IsNullOrWhiteSpace(s.Translation) ? s.Text : s.Translation;
             if (string.IsNullOrWhiteSpace(text)) continue;
-            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{text}|{settings.TtsModelPath}|{settings.TtsVoice}|{s.Start}|{s.End}")))[..24];
+            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{text}|{settings.TtsModelPath}|{settings.TtsVoice}|{s.Start}|{s.End}|{SherpaRuntimes.Provider}")))[..24];
             var raw = Path.Combine(directory, hash + "-raw.wav"); var clip = Path.Combine(directory, hash + ".wav");
             if (!File.Exists(clip))
             {
@@ -48,7 +61,7 @@ public sealed class SherpaSpeech(AppPaths paths) : ISpeechSynthesizer
                 Processes.EnsureSuccess(await Processes.RunAsync(media.Ffmpeg, args, ct: ct), "配音时间对齐");
             }
             clips.Add((s, clip));
-            await progress(new("progress", $"配音 {i + 1}/{segments.Length}", (double)(i + 1) / segments.Length));
+            await progress(new("progress", $"配音 {i + 1}/{segments.Length}", (double)(i + 1) / segments.Length, Backend: backend, Device: device));
         }
         // Write directly to the timeline file so long media does not allocate a full-duration audio buffer.
         await using (var timeline = new FileStream(pending, FileMode.Create, FileAccess.ReadWrite))
@@ -67,7 +80,7 @@ public sealed class SherpaSpeech(AppPaths paths) : ISpeechSynthesizer
             timeline.Position = 0; WriteWaveHeader(timeline, checked((int)(timeline.Length - 44)), 24000);
         }
         File.Move(pending, output, true);
-        await progress(new("completed", "配音已生成并对齐字幕时间", 1, Path: output));
+        await progress(new("completed", "配音已生成并对齐字幕时间", 1, Backend: backend, Device: device, Path: output));
     }
     public async Task DiarizeAsync(JobRequest request, Func<JobEvent, Task> progress, CancellationToken ct)
     {
@@ -77,7 +90,6 @@ public sealed class SherpaSpeech(AppPaths paths) : ISpeechSynthesizer
         config.Segmentation.Pyannote.Model = request.Settings.SpeakerSegmentationModel;
         config.Embedding.Model = request.Settings.SpeakerEmbeddingModel;
         config.Clustering.NumClusters = -1; config.Clustering.Threshold = 0.5f;
-        using var diarization = new OfflineSpeakerDiarization(config);
         var wav = Path.Combine(request.WorkDirectory, "diarization.wav");
         await new MediaTools(paths).ExtractAudioAsync(request.MediaPath, wav, 0, null, ct);
         float[] samples;
@@ -87,6 +99,17 @@ public sealed class SherpaSpeech(AppPaths paths) : ISpeechSynthesizer
             wave.BaseStream.Position = offset; samples = new float[length / 2];
             for (var i = 0; i < samples.Length; i++) samples[i] = wave.ReadInt16() / 32768f;
         }
+        config.Segmentation.Provider = config.Embedding.Provider = SherpaRuntimes.ProfilingProvider(request.WorkDirectory, out var profile);
+        var backend = SherpaRuntimes.Provider == "cpu" ? "Cpu" : SherpaRuntimes.Provider == "cuda" ? "Cuda" : "DirectML";
+        var device = AppPaths.Rid + " CPU";
+        if (profile is not null)
+        {
+            await progress(new("progress", "验证说话人模型 GPU…", Backend: "Pending"));
+            using (var probe = new OfflineSpeakerDiarization(config)) _ = probe.Process(samples[..Math.Min(samples.Length, 48000)]);
+            device = SherpaRuntimes.CompleteProof(profile);
+            config.Segmentation.Provider = config.Embedding.Provider = SherpaRuntimes.Provider;
+        }
+        using var diarization = new OfflineSpeakerDiarization(config);
         var result = diarization.Process(samples);
         var segments = request.InputSegments?.Select(s => s.Copy()).ToArray() ?? [];
         foreach (var s in segments)
@@ -95,7 +118,7 @@ public sealed class SherpaSpeech(AppPaths paths) : ISpeechSynthesizer
             if (best is not null && Math.Min(best.End, s.End) > Math.Max(best.Start, s.Start)) s.Speaker = $"说话人 {best.Speaker + 1}";
         }
         File.Delete(wav);
-        await progress(new("completed", "说话人区分完成", 1, Segments: segments));
+        await progress(new("completed", "说话人区分完成", 1, Segments: segments, Backend: backend, Device: device));
     }
     private static (long Offset, long Length) FindWaveData(BinaryReader reader)
     {

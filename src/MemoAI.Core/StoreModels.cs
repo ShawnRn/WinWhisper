@@ -8,8 +8,9 @@ public static class StoreModels
 {
     public static readonly StoreModel[] All =
     [
-        ..AsrModels.All.Select(m => new StoreModel(m.Id, m.Name, "音视频转写", m.Languages,
-            "sherpa-onnx · ARM64 / x64 · CPU · 短片段时间戳。首次使用请对照原音检查识别效果。",
+        ..AsrModels.All.Where(m => m.Id != "funasr-nano-fp16").Select(m => new StoreModel(m.Id, m.Name, "音视频转写", m.Languages,
+            "sherpa-onnx · ARM64 / x64 · CUDA / DirectML / CPU（按运行时和模型验证）。短片段时间戳；首次使用请对照原音检查效果。" + (m.Id switch
+            { "sensevoice-int8" => " ARM64 的 DirectML 请使用 FP32 版；INT8 可使用 CUDA。", "funasr-nano" => " GPU 使用 DirectML，CUDA 未通过内容校验。", "funasr-nano-fp16" => " 当前仅 CPU 兼容模式；需要 GPU 请使用 INT8 版的 DirectML。", _ => "" }),
             $"{m.Bytes / 1048576d:0} MB", m.Bytes > 800000000 ? "建议 8 GB+ 内存" : "建议 4 GB+ 内存", "ONNX", Asr: m)),
         new("whisper-turbo", "Whisper large-v3-turbo", "音视频转写", "中英混合 · 多语言 · CUDA 加速", "日常视频与播客的首选，在识别效果与速度之间取得平衡。", "约 1.6 GB", "建议 8 GB+ 内存", "推荐", ModelCatalog.Items.First(m => m.Id == "whisper-turbo")),
         new("whisper-large", "Whisper large-v3", "音视频转写", "中英混合 · 多语言 · 精度优先", "用于复杂口音、噪声与重要素材。模型更大，处理时间通常更长。", "约 3.1 GB", "建议 12 GB+ 内存", "高精度", ModelCatalog.Items.First(m => m.Id == "whisper-large")),

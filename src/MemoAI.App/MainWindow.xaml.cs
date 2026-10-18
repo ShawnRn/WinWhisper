@@ -52,7 +52,10 @@ public sealed partial class MainWindow : Window
 
         Root.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
         ExtendsContentIntoTitleBar = true; SetTitleBar(TitleDragRegion);
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(1500, 980));
+        var display = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(AppWindow.Id, Microsoft.UI.Windowing.DisplayAreaFallback.Nearest);
+        var work = display.WorkArea;
+        var width = Math.Min(1500, Math.Max(320, work.Width - 40)); var height = Math.Min(980, Math.Max(240, work.Height - 40));
+        AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(work.X + (work.Width - width) / 2, work.Y + (work.Height - height) / 2, width, height));
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "Brand", "WinWhisper.ico"));
         store = new Store(paths.DataRoot); settings = store.LoadSettings(); ApplySettings();
         sessions = new(store.GetSessions());
@@ -125,6 +128,7 @@ public sealed partial class MainWindow : Window
         if (closing) return;
         closing = true; playbackTimer.Stop(); saveTimer.Stop(); noticeTimer.Stop(); recordingTimer.Stop(); aiCancellation?.Cancel(); linkCancellation?.Cancel();
         foreach (var cancellation in modelDownloads.Values) cancellation.Cancel();
+        cudaRuntimeDownload?.Cancel();
         liveRecordingStop?.Cancel(); recordingClipStop?.Cancel();
         try { await SaveCurrentAsync(); await scheduler.DisposeAsync(); provider?.Dispose(); if (recorder is not null) await FinishRecordingAsync(); }
         catch (Exception ex) { File.AppendAllText(Path.Combine(paths.DataRoot, "shutdown.log"), ex + "\n"); }

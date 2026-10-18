@@ -14,6 +14,9 @@ public sealed partial class MainWindow
         {
             // Invoked only by an explicit development argument with a separate --data-root.
             if (!Environment.GetCommandLineArgs().Any(a => a.StartsWith("--data-root="))) throw new InvalidOperationException("UI 自测必须指定隔离的数据目录。");
+            var workArea = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(AppWindow.Id, Microsoft.UI.Windowing.DisplayAreaFallback.Nearest).WorkArea;
+            result["initialWindowFitsDisplayWorkArea"] = AppWindow.Position.X >= workArea.X && AppWindow.Position.Y >= workArea.Y
+                && AppWindow.Position.X + AppWindow.Size.Width <= workArea.X + workArea.Width && AppWindow.Position.Y + AppWindow.Size.Height <= workArea.Y + workArea.Height;
             ollamaModels = ["test-translation", "test-summary-a", ..Enumerable.Range(0, 12).Select(i => $"fixture-model-{i}"), "test-summary-b"];
             var navigationPassed = true;
             foreach (var (item, page) in new (NavigationViewItem, UIElement)[] { (NavQueue, QueueView), (NavRecord, RecordView), (NavLink, LinkView), (NavModels, ModelStoreView), (NavSettings, SettingsView), (NavLibrary, LibraryView) })
@@ -25,9 +28,9 @@ public sealed partial class MainWindow
             StoreCategory.SelectedIndex = 0; StoreSearch.Text = "parakeet"; BuildModelStore();
             result["parakeetModelsVisibleInStore"] = modelCards.Count == 3;
             StoreSearch.Text = "阿里"; BuildModelStore();
-            result["alibabaModelsVisibleInStore"] = modelCards.Count == 7;
+            result["alibabaModelsVisibleInStore"] = modelCards.Count == 6 && !modelCards.ContainsKey("funasr-nano-fp16");
             StoreSearch.Text = ""; StoreCategory.SelectedIndex = 0; BuildModelStore();
-            var categoriesSeparated = modelCards.Count == 14 && modelCards.Keys.All(k => k.StartsWith("whisper-") || AsrModels.All.Any(m => m.Id == k)) && ollamaButtons.Count == 0;
+            var categoriesSeparated = modelCards.Count == 13 && modelCards.Keys.All(k => k.StartsWith("whisper-") || AsrModels.All.Any(m => m.Id == k)) && ollamaButtons.Count == 0;
             StoreCategory.SelectedIndex = 1; BuildModelStore();
             categoriesSeparated &= modelCards.Keys.SequenceEqual(new[] { "qwen" }) && ollamaButtons.Count == ollamaModels.Length && RefreshOllamaButton.Visibility == Visibility.Visible;
             StoreCategory.SelectedIndex = 2; BuildModelStore();
@@ -65,6 +68,8 @@ public sealed partial class MainWindow
             result["installedButtonSurface"] = $"enabled={installedButton.IsEnabled};loaded={installedPaint?.IsLoaded};size={installedPaint?.ActualWidth}x{installedPaint?.ActualHeight};radius={installedPaint?.CornerRadius};geometry={installedPaint?.HasGeometry};view={ModelStoreView.Visibility}/{ModelStoreView.IsLoaded};cards={StoreCards.IsLoaded}/{StoreCards.ActualHeight};current={ReferenceEquals(installedButton, modelCards["speakers"].Apply)}";
             StoreSearch.Text = ""; StoreCategory.SelectedIndex = 0; BuildModelStore();
             result["settingsContainAboutMetadata"] = Descendants(SettingsContent).OfType<TextBlock>().Any(t => t.Text.Contains("开发者：Shawn Rain") && t.Text.Contains("MIT"));
+            result["settingsUseStoreInsteadOfDuplicateDownloadControls"] = Descendants(SettingsContent).OfType<Button>().Any(b => b.Content?.ToString() == "模型商店")
+                && !Descendants(SettingsContent).OfType<Button>().Any(b => b.Content?.ToString()?.Contains("下载") == true);
             ShowPage(RecordView); await Task.Delay(80);
             var recordBounds = RecordingContent.TransformToVisual(RecordView).TransformBounds(new Windows.Foundation.Rect(0, 0, RecordingContent.ActualWidth, RecordingContent.ActualHeight));
             result["recordingColumnCentered"] = Math.Abs(recordBounds.X + recordBounds.Width / 2 - RecordView.ActualWidth / 2) < 3;

@@ -7,17 +7,17 @@
 | 系列 | 版本 | 语言 | 当前运行时 |
 |---|---|---|---|
 | Whisper | tiny / small / large-v3-turbo / large-v3 | 多语言，含中文 | whisper.cpp；CUDA / Vulkan / CPU |
-| NVIDIA Parakeet TDT | 0.6B v2 INT8 | 英语 | sherpa-onnx CPU |
-| NVIDIA Parakeet TDT | 0.6B v3 INT8 | 25 种欧洲语言，不含中文 | sherpa-onnx CPU |
-| NVIDIA Parakeet TDT/CTC | 0.6B 日语 INT8 | 日语 | sherpa-onnx CPU |
-| 阿里 SenseVoice Small | INT8 / FP32 | 中文、粤语、英语、日语、韩语 | sherpa-onnx CPU |
-| 阿里 Paraformer | INT8 / FP32 | 中文 | sherpa-onnx CPU |
-| 阿里 FunASR Nano | INT8 / FP16 | 中文、英语、日语 | sherpa-onnx CPU |
-| 阿里 Qwen3-ASR | 0.6B INT8 | 30 种语言及中文方言 | sherpa-onnx CPU |
+| NVIDIA Parakeet TDT | 0.6B v2 INT8 | 英语 | CUDA / DirectML / CPU；v2 尚未单独完成 GPU 验收 |
+| NVIDIA Parakeet TDT | 0.6B v3 INT8 | 25 种欧洲语言，不含中文 | CUDA / DirectML / CPU，v3 实测通过 |
+| NVIDIA Parakeet TDT/CTC | 0.6B 日语 INT8 | 日语 | CUDA / DirectML / CPU；日语包尚未单独完成 GPU 验收 |
+| 阿里 SenseVoice Small | INT8 / FP32 | 中文、粤语、英语、日语、韩语 | INT8 CUDA、FP32 DirectML 实测通过；ARM64 INT8 DirectML 不兼容 |
+| 阿里 Paraformer | INT8 / FP32 | 中文 | INT8 CUDA / DirectML 实测通过；FP32 GPU 尚未单独验收 |
+| 阿里 FunASR Nano | INT8 | 中文、英语、日语 | DirectML / CPU；CUDA 未通过内容校验 |
+| 阿里 Qwen3-ASR | 0.6B INT8 | 30 种语言及中文方言 | CUDA / DirectML / CPU，实测通过 |
 
-应用模型后，它成为新媒体的默认转写模型；已有媒体保留自己的设置，可在「转写设置」选择已安装模型，或点击恢复默认设置。下载不更改已经运行的任务。手动为 ONNX 模型指定 CUDA / Vulkan 会明确报错，自动模式如实记录 CPU。
+应用模型后，它成为新媒体的默认转写模型；已有媒体保留自己的设置，可在「转写设置」选择已安装模型，或点击恢复默认设置。下载不更改已经运行的任务。ONNX 使用 CUDA / DirectML，Whisper 使用 CUDA / Vulkan；自动模式可回退 CPU，明确选择 GPU 时不静默回退。GPU 算子仍可能与 CPU 混合执行，详见 [GPU 支持与验证](GPU.md)。FunASR Nano FP16 未通过当前运行时的内容校验，已从商店和可选模型中收起，旧安装记录仍能识别并提示更换 INT8。
 
-ONNX 模型以 20 秒为上限分段，近静音和长停顿可以使用能量检测过滤。它不使用 Whisper 的 Silero GGML 模型；字幕时间目前是片段范围，未提供词级强制对齐。Whisper 的搜索宽度、采样温度、处理分块和字幕长度控件在选择 ONNX 模型时禁用。
+ONNX 模型以 20 秒为上限分段，近静音和长停顿可以使用能量检测过滤。它不使用 Whisper 的 Silero GGML 模型；有可靠 token 起止信息时保留真实时间，缺失时保持片段范围，不插值伪造词时间。Whisper 的搜索宽度、采样温度、处理分块和字幕长度控件在选择 ONNX 模型时禁用。
 
 下载使用固定资产大小与 SHA-256，支持 HTTP Range 续传。先验证压缩包，再检查路径与文件类型、解压至暂存目录、检查模型布局，最后原子写入安装记录。暂停或失败不会把半成品标为已安装。载入前再次检查安装记录、文件大小及模型配置；模型缺失时请在商店重新下载。
 

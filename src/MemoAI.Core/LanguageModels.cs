@@ -71,7 +71,7 @@ public sealed class LocalLanguageModelProvider : ILocalLanguageModelProvider, ID
         if (server is { HasExited: false } && serverUrl is not null) return serverUrl;
         if (!File.Exists(settings.GgufPath)) throw new FileNotFoundException("请先选择或下载 GGUF 语言模型。");
         Exception? last = null;
-        var backends = settings.Backend == ComputeBackend.Auto ? new[] { ComputeBackend.Cuda, ComputeBackend.Vulkan, ComputeBackend.Cpu } : [settings.Backend];
+        var backends = settings.Backend == ComputeBackend.Auto ? new[] { ComputeBackend.Cuda, ComputeBackend.Vulkan, ComputeBackend.Cpu } : [settings.Backend == ComputeBackend.DirectML ? ComputeBackend.Vulkan : settings.Backend];
         foreach (var backend in backends)
         {
             ct.ThrowIfCancellationRequested();

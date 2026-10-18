@@ -28,6 +28,9 @@ WinWhisper 的应用代码采用 [MIT](LICENSE)。以下项目、字体、SDK、
 | [llama.cpp](https://github.com/ggml-org/llama.cpp) | 应用管理的 GGUF 推理 | MIT；模型许可独立 |
 | [Ollama](https://github.com/ollama/ollama) | 已运行的本地模型服务集成 | MIT；模型许可独立 |
 | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | 本地语音合成、说话人处理及扩展语音模型引擎 | Apache-2.0；模型许可独立 |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) / [DirectML](https://github.com/microsoft/DirectML) | ONNX GPU 算子执行；按架构构建 sherpa-onnx 与 DirectML 互操作 | ONNX Runtime 为 MIT；DirectML 遵循 Microsoft.AI.DirectML 包内 LICENSE，分发保留两者声明 |
+| [NVIDIA CUDA](https://docs.nvidia.com/cuda/eula/index.html) / [cuDNN](https://docs.nvidia.com/deeplearning/cudnn/backend/latest/reference/eula.html) | 可选 CUDA 13 / cuDNN 9 GPU 运行时，由用户在商店主动下载 | NVIDIA 各组件许可；不属于应用 MIT，保留原始包内的许可与上游链接 |
+| [eSpeak NG](https://github.com/espeak-ng/espeak-ng) / [piper-phonemize](https://github.com/rhasspy/piper-phonemize) | sherpa 的 TTS 构建包含的音素处理组件 | eSpeak NG 为 GPL-3.0，piper-phonemize 为 MIT；保留所用源码与各项 COPYING / LICENSE |
 | [ONNX Runtime](https://github.com/microsoft/onnxruntime) | ONNX 语音模型运行 | MIT |
 | [Silero VAD](https://github.com/snakers4/silero-vad) | 语音活动检测 | MIT |
 | [Qwen](https://huggingface.co/Qwen) / [IndexTeam](https://huggingface.co/IndexTeam) | 按需选择的本地翻译、总结模型来源 | 以每个模型的 model card 为准 |

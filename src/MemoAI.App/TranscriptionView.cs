@@ -44,7 +44,7 @@ public sealed partial class MainWindow
         try
         {
             var options = current.Transcription ?? TranscriptionOptions.FromSettings(settings);
-            var models = AsrModels.All.Where(m => AsrModels.IsInstalled(m, paths.ModelRoot)).Select(m => new ModelChoice(m.Name + " · CPU", m.ManifestPath(paths.ModelRoot))).Concat(ModelCatalog.Items.Where(m => m.Id.StartsWith("whisper-") && File.Exists(Path.Combine(paths.ModelRoot, m.FileName)))
+            var models = AsrModels.All.Where(m => m.Id != "funasr-nano-fp16" && AsrModels.IsInstalled(m, paths.ModelRoot)).Select(m => new ModelChoice(m.Name + " · ONNX", m.ManifestPath(paths.ModelRoot))).Concat(ModelCatalog.Items.Where(m => m.Id.StartsWith("whisper-") && File.Exists(Path.Combine(paths.ModelRoot, m.FileName)))
                 .Select(m => new ModelChoice(m.Name.Replace(" · 推荐", ""), Path.Combine(paths.ModelRoot, m.FileName)))).ToList();
             if (options.ModelPath.Length > 0 && !models.Any(m => m.Path.Equals(options.ModelPath, StringComparison.OrdinalIgnoreCase))) models.Add(new(TranscriptionEngines.ModelName(options.ModelPath), options.ModelPath));
             TranscriptionModel.ItemsSource = models;
@@ -91,9 +91,14 @@ public sealed partial class MainWindow
     {
         if (TranscriptionModel is null || TranscriptionBeam is null) return;
         var onnx = AsrModels.IsManifest((TranscriptionModel.SelectedItem as ModelChoice)?.Path ?? "");
+        string? modelId = null;
+        if (onnx && TranscriptionModel.SelectedItem is ModelChoice choice) try { modelId = AsrModels.ReadInstallation(choice.Path).Id; } catch (Exception) { }
         TranscriptionBeam.IsEnabled = TranscriptionChunk.IsEnabled = TranscriptionMaxLength.IsEnabled = TranscriptionTemperature.IsEnabled = !onnx;
         TranscriptionVad.Content = onnx ? "过滤近静音（能量检测）" : "检测静音（Silero VAD）";
-        foreach (var item in TranscriptionBackend.Items.OfType<ComboBoxItem>().Skip(1).Take(2)) item.IsEnabled = !onnx;
+        ((ComboBoxItem)TranscriptionBackend.Items[2]).IsEnabled = !onnx;
+        ((ComboBoxItem)TranscriptionBackend.Items[1]).IsEnabled = !onnx || SherpaRuntimes.Supports(new("cuda", "win-x64", []), modelId ?? "");
+        ((ComboBoxItem)TranscriptionBackend.Items[4]).IsEnabled = onnx && SherpaRuntimes.Supports(new("directml", AppPaths.Rid, []), modelId ?? "");
+        if (TranscriptionBackend.SelectedItem is ComboBoxItem { IsEnabled: false }) TranscriptionBackend.SelectedIndex = 0;
     }
     private void TranscriptionNumber_Changed(NumberBox sender, NumberBoxValueChangedEventArgs args) => SaveTranscriptionOptions();
     private void TranscriptionCheck_Changed(object sender, RoutedEventArgs e) => SaveTranscriptionOptions();

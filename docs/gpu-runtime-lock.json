@@ -1,0 +1,92 @@
+{
+  "sherpa": {
+    "version": "1.13.8",
+    "commit": "11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf",
+    "source": "https://github.com/k2-fsa/sherpa-onnx",
+    "patches": [
+      "preinstalled ARM64/x64 DirectML imports",
+      "unique Session profiling prefixes"
+    ],
+    "patchScript": "scripts/build-sherpa-directml.ps1"
+  },
+  "onnxRuntimeDirectML": {
+    "sha256": "57e9f11b73437bef7a309496135d4c1f96b1a8e9ddba60013fa27bfc1d788681",
+    "version": "1.24.4",
+    "source": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/1.24.4/microsoft.ml.onnxruntime.directml.1.24.4.nupkg"
+  },
+  "directML": {
+    "sha256": "4e7cb7ddce8cf837a7a75dc029209b520ca0101470fcdf275c1f49736a3615b9",
+    "version": "1.15.4",
+    "source": "https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/1.15.4/microsoft.ai.directml.1.15.4.nupkg"
+  },
+  "cudaArchives": [
+    {
+      "name": "sherpa-onnx-v1.13.8-cuda-13.x-cudnn-9.x-onnxruntime1.28.2-win-x64-cuda.tar.bz2",
+      "sha256": "1702e4a1ee68a07422469a7ec1d304a54b43a345ad888daf8e0b0257004a3273",
+      "bytes": 478110488,
+      "source": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-cuda-13.x-cudnn-9.x-onnxruntime1.28.2-win-x64-cuda.tar.bz2"
+    },
+    {
+      "name": "cudart-llama-bin-win-cuda-13.4-x64.zip",
+      "sha256": "738f8c251ac22b70c3ae6f83a10cf222725df0395246a2cf58f32bdb85fbe668",
+      "bytes": 423535356,
+      "source": "https://github.com/ggml-org/llama.cpp/releases/download/b11716/cudart-llama-bin-win-cuda-13.4-x64.zip"
+    },
+    {
+      "name": "cudnn-windows-x86_64-9.21.1.3_cuda13-archive.zip",
+      "sha256": "a511373690548296fb75897a259f58a44f2419c89e848e5c46030ee0bd369bf4",
+      "bytes": 394593427,
+      "source": "https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-9.21.1.3_cuda13-archive.zip"
+    }
+  ],
+  "directMLBinaries": [
+    {
+      "file": "DirectML.dll",
+      "bytes": 18444832,
+      "sha256": "77b0db83ff903f2323f5caf538499d75af6038bbea23b7959f7d232d9a4ab9d4",
+      "rid": "win-arm64"
+    },
+    {
+      "file": "onnxruntime_providers_shared.dll",
+      "bytes": 21528,
+      "sha256": "3923290b6fc5dcd754b4d533463a9b8b46da0889d3991ef4f9b9afa17929e3e2",
+      "rid": "win-arm64"
+    },
+    {
+      "file": "onnxruntime.dll",
+      "bytes": 17546784,
+      "sha256": "939fa0be435d253eadd9e394ee94ad6b6ac1878c83b64118bb4bda669eb0e28c",
+      "rid": "win-arm64"
+    },
+    {
+      "file": "sherpa-onnx-c-api.dll",
+      "bytes": 4587520,
+      "sha256": "0611d1bfebd170983eb3fc281761ae448f56255b4a43be1ceae8110074e64e4d",
+      "rid": "win-arm64"
+    },
+    {
+      "file": "DirectML.dll",
+      "bytes": 18527776,
+      "sha256": "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1",
+      "rid": "win-x64"
+    },
+    {
+      "file": "onnxruntime_providers_shared.dll",
+      "bytes": 22040,
+      "sha256": "265c8daf29637cb259cac8be9f08f2cd45f3883f0f0e4949cbfddd5b4cbec3b6",
+      "rid": "win-x64"
+    },
+    {
+      "file": "onnxruntime.dll",
+      "bytes": 17328152,
+      "sha256": "e7eedec6a6f26dc39dc948276a75ef6d2bee3fff944d874ceed0bbd3b97bff40",
+      "rid": "win-x64"
+    },
+    {
+      "file": "sherpa-onnx-c-api.dll",
+      "bytes": 4618752,
+      "sha256": "756506f502448e88f7e037b780cacb13da179d5b8982dbdca74ac6e4c688d397",
+      "rid": "win-x64"
+    }
+  ]
+}

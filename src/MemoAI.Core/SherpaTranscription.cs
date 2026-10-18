@@ -17,16 +17,23 @@ public static class TranscriptionEngines
 
 public sealed class SherpaTranscription(AppPaths paths) : ITranscriptionEngine
 {
+    public static string CheckpointRoot(JobRequest request, string provider)
+    {
+        var s = request.Settings; var model = AsrModels.ReadInstallation(s.TranscriptionModelPath);
+        return Path.Combine(request.WorkDirectory, "transcription", MediaTools.CacheKey(request.MediaPath, s.TranscriptionModelPath,
+            Json.Write(new { version = "sherpa-1.13.8-gpu-v1", provider, model.Sha256, s.AutoSegmentEnglish, s.Language, s.Glossary, s.EnableVad, request.RangeStart, request.RangeEnd })));
+    }
     public static OfflineRecognizerConfig Configuration(string manifest, AppSettings settings)
     {
         var model = AsrModels.ReadInstallation(manifest);
-        if (settings.Backend is ComputeBackend.Cuda or ComputeBackend.Vulkan)
-            throw new NotSupportedException($"{model.Name} 当前使用 sherpa-onnx CPU 运行时。请选择「自动」或「CPU」；CUDA / Vulkan 请使用 Whisper。");
+        if (model.Id == "funasr-nano-fp16") throw new NotSupportedException("当前 FunASR Nano FP16 未通过内容校验，暂不提供推理。请在模型商店选择已验证的 INT8 版本。");
+        if (settings.Backend == ComputeBackend.Vulkan)
+            throw new NotSupportedException($"{model.Name} 使用 ONNX Runtime，请选择自动、CUDA、DirectML 或 CPU；Vulkan 适用于 Whisper。");
         if (settings.Language != "auto" && !model.LanguageCodes.Contains(settings.Language))
             throw new ArgumentException($"{model.Name} 不支持语言 {settings.Language}。支持：{model.Languages}。");
         var f = AsrModels.ResolveFiles(manifest);
         var config = new OfflineRecognizerConfig();
-        config.ModelConfig.Provider = "cpu";
+        config.ModelConfig.Provider = SherpaRuntimes.Provider;
         config.ModelConfig.NumThreads = settings.TranscriptionThreads == 0 ? Math.Clamp(Environment.ProcessorCount / 2, 2, 8) : settings.TranscriptionThreads;
         config.ModelConfig.Tokens = f.GetValueOrDefault("tokens", "");
         switch (model.Family)
@@ -44,7 +51,7 @@ public sealed class SherpaTranscription(AppPaths paths) : ITranscriptionEngine
             case "funasr":
                 config.ModelConfig.FunAsrNano.EncoderAdaptor = f["encoder"]; config.ModelConfig.FunAsrNano.LLM = f["llm"];
                 config.ModelConfig.FunAsrNano.Embedding = f["embedding"]; config.ModelConfig.FunAsrNano.Tokenizer = f["tokenizer"];
-                config.ModelConfig.FunAsrNano.Language = settings.Language == "auto" ? "" : settings.Language;
+                config.ModelConfig.FunAsrNano.Language = settings.Language switch { "auto" => "", "zh" => "中文", "en" => "英文", "ja" => "日文", _ => settings.Language };
                 config.ModelConfig.FunAsrNano.Itn = 1; config.ModelConfig.FunAsrNano.Hotwords = settings.Glossary; break;
         }
         return config;
@@ -53,18 +60,18 @@ public sealed class SherpaTranscription(AppPaths paths) : ITranscriptionEngine
     public async Task TranscribeAsync(JobRequest request, Func<JobEvent, Task> progress, CancellationToken ct)
     {
         var settings = request.Settings; _ = TranscriptionOptions.FromSettings(settings).ApplyTo(settings);
-        var config = Configuration(settings.TranscriptionModelPath, settings);
         var model = AsrModels.ReadInstallation(settings.TranscriptionModelPath);
         var media = new MediaTools(paths); var duration = await media.ProbeAsync(request.MediaPath, ct);
         var begin = Math.Max(0, request.RangeStart ?? 0); var finish = Math.Min(duration, request.RangeEnd ?? duration);
         if (!double.IsFinite(finish) || finish <= begin) throw new InvalidDataException("媒体没有可处理的音频时长。");
-        var watch = Stopwatch.StartNew(); var device = $"{AppPaths.Rid} CPU · {model.Name}";
-        await progress(new("progress", "加载 " + model.Name, Backend: "Cpu", Device: device));
+        var watch = Stopwatch.StartNew();
+        using var recognizer = new SherpaAsrSession(settings.TranscriptionModelPath, settings, request.WorkDirectory);
+        await progress(new("progress", "加载 " + model.Name, Backend: "Pending", Device: "正在验证 " + SherpaRuntimes.Provider));
         await progress(new("warning", "ONNX 模型使用短音频分段。无词级时间戳的模型显示片段时间；Whisper 的 beam、温度、Silero GGML 参数不适用于此引擎。"));
-        using var recognizer = new OfflineRecognizer(config);
         // Keep one model resident for the whole job. Bound audio memory even for multi-hour media.
-        var key = MediaTools.CacheKey(request.MediaPath, settings.TranscriptionModelPath, Json.Write(new { version = "sherpa-1.13.8-word-times-v2", model.Sha256, settings.AutoSegmentEnglish, settings.Language, settings.Glossary, settings.EnableVad, begin, finish }));
-        var cache = Path.Combine(request.WorkDirectory, "transcription", key); Directory.CreateDirectory(cache);
+        var cache = CheckpointRoot(request, SherpaRuntimes.Provider); Directory.CreateDirectory(cache);
+        // GPU checkpoints become reusable only after the parent verifies a clean native exit.
+        var reusable = SherpaRuntimes.Provider == "cpu" || File.Exists(Path.Combine(cache, "verified.json"));
         const int chunkSeconds = 20; var count = (int)Math.Ceiling((finish - begin) / chunkSeconds);
         var all = new List<SubtitleSegment>();
         for (var i = 0; i < count; i++)
@@ -72,9 +79,9 @@ public sealed class SherpaTranscription(AppPaths paths) : ITranscriptionEngine
             ct.ThrowIfCancellationRequested();
             var offset = begin + i * chunkSeconds; var length = Math.Min(chunkSeconds, finish - offset);
             var checkpoint = Path.Combine(cache, $"{i:00000}.segments.json");
-            await progress(new("progress", $"{model.Name} · 片段 {i + 1}/{count}", (double)i / count, Backend: "Cpu", Device: device));
+            await progress(new("progress", $"{model.Name} · 片段 {i + 1}/{count}", (double)i / count, Backend: recognizer.Backend, Device: recognizer.Device));
             List<SubtitleSegment> segments;
-            if (File.Exists(checkpoint)) segments = Json.Read<List<SubtitleSegment>>(await File.ReadAllTextAsync(checkpoint, ct));
+            if (reusable && File.Exists(checkpoint)) segments = Json.Read<List<SubtitleSegment>>(await File.ReadAllTextAsync(checkpoint, ct));
             else
             {
                 var wav = Path.Combine(cache, $"{i:00000}.wav");
@@ -84,9 +91,7 @@ public sealed class SherpaTranscription(AppPaths paths) : ITranscriptionEngine
                 foreach (var (start, end) in AudioRanges(samples, settings.EnableVad))
                 {
                     ct.ThrowIfCancellationRequested();
-                    using var stream = recognizer.CreateStream();
-                    stream.AcceptWaveform(16000, samples[start..end]); recognizer.Decode(stream); ct.ThrowIfCancellationRequested();
-                    var result = stream.Result;
+                    var result = recognizer.Decode(samples[start..end]); ct.ThrowIfCancellationRequested();
                     var text = ChineseTypography.Apply(Regex.Replace(result.Text, @"<\|[^|]*\|>", "").Trim());
                     if (text.Length > 0) segments.Add(new() { Start = offset + start / 16000d, End = Math.Min(finish, offset + end / 16000d), Text = text,
                         Words = SentenceSegmentation.ReadOnnxWords(result.Tokens, result.Timestamps, result.Durations, offset + start / 16000d, Math.Min(finish, offset + end / 16000d)) });
@@ -96,9 +101,9 @@ public sealed class SherpaTranscription(AppPaths paths) : ITranscriptionEngine
                 var pending = checkpoint + ".pending"; await File.WriteAllTextAsync(pending, Json.Write(segments), ct); File.Move(pending, checkpoint, true); File.Delete(wav);
             }
             all.AddRange(segments);
-            await progress(new("segments", "字幕已保存到检查点", (i + 1d) / count, Subtitles.Repair(all).ToArray(), "Cpu", device));
+            await progress(new("segments", "字幕已保存到检查点", (i + 1d) / count, Subtitles.Repair(all).ToArray(), recognizer.Backend, recognizer.Device));
         }
-        await progress(new("completed", "转写完成（片段时间戳）", 1, Subtitles.Repair(all).ToArray(), "Cpu", device, watch.Elapsed.TotalSeconds, watch.Elapsed.TotalSeconds / (finish - begin)));
+        await progress(new("completed", "转写完成", 1, Subtitles.Repair(all).ToArray(), recognizer.Backend == "Pending" ? "Cache" : recognizer.Backend, recognizer.Backend == "Pending" ? "使用检查点或静音，未执行模型" : recognizer.Device, watch.Elapsed.TotalSeconds, watch.Elapsed.TotalSeconds / (finish - begin)));
     }
 
     public static float[] ReadPcm16(string wav)

@@ -41,6 +41,7 @@ Read [workflows/README.md](workflows/README.md) for the development, native UI, 
 
 - Model store entries must declare the actual engine, languages, architecture/backend constraints, source and license. Downloading and applying are separate validated steps; detect missing/incompatible files before starting inference.
 - Keep model downloads explicit and show size/progress/cancel. Preserve resumable downloads and completed task stages. Never present a CPU-only runtime as CUDA-accelerated.
+- Model and optional inference-runtime downloads belong in the model store. Settings may configure parameters, services and existing paths, but must not duplicate download controls.
 - GPU-intensive work is serialized by default. Keep decoding and inference outside the UI thread and isolate native crashes in workers.
 - ONNX ASR models use versioned `.asr.json` installation records and the pinned catalog in `AsrModels.cs`. Never route an arbitrary `.onnx` file to Whisper, guess a model family, or apply a partially extracted model. Retain model-specific language and license limits.
 - Live recording sends finalized PCM clips to a persistent worker. Keep offsets relative to the recording, preserve audio if inference fails, and retain the single GPU gate. COM process-loopback callbacks must be publicly COM-visible and agile; completion signals used by capture disposal must run continuations asynchronously.

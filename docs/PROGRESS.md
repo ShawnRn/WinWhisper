@@ -1,5 +1,17 @@
 # 开发进度
 
+## 2026-10-18：GPU 适配与商店入口统一
+
+- 设置页去掉模型下载区、配音和说话人模型下载按钮，只保留参数、服务及已有文件路径；快捷入口改为「模型商店」。可选 CUDA 运行时也只在商店的语音辅助分类管理，支持固定 SHA-256、续传、暂停及原子完成标记。
+- ONNX 自动尝试 CUDA → DirectML → CPU。ARM64 的 CUDA 运行在独立 x64 兼容 Worker；DirectML 按 ARM64 / x64 构建，不将 x64 DLL 装入 ARM64 进程。GPU 工作进程在用户数据目录准备，支持安装到只读的 Program Files。
+- 推理前进行受限 GPU 探测，读取实际算子执行事件；没有目标 GPU 事件不能宣称 GPU 加速。兼容 CPU 算子会明确显示；检查点复用标为缓存。补齐 CUDA / cuDNN 依赖检查，退出码 0 但原生日志报错时也拒绝完成。配音结果经父进程验证后再替换最终文件，录音进程退出及时取消等待输入。
+- 实测 CUDA：Parakeet v3 INT8、SenseVoice INT8、Paraformer INT8、Qwen3-ASR INT8、Kokoro、说话人识别。实测 ARM64 DirectML：Parakeet v3、SenseVoice FP32、Paraformer INT8、Qwen3-ASR、FunASR Nano INT8、说话人识别。具体限制和重现命令见 [GPU 支持](GPU.md)。
+- ARM64 SenseVoice INT8 DirectML、FunASR Nano INT8 CUDA、ARM64 Kokoro DirectML 未通过，启动前拒绝这些已知组合。FunASR Nano FP16 在 GPU 和 CPU 下都未通过内容校验，已从商店收起，不再让用户下载后得到无效结果。其他量化版本和语种仍需各自验收。
+- 修复上游 C# 结果绑定将 token 指针误读为时长的问题，改用原生 JSON C API。TDT 中零时长的续接子词先合并为完整单词，再校验正时长；不丢失整个句子的对齐信息。为 DirectML 的多 Session 分配独立 profiling 前缀，避免旧版 ORT 以秒命名时覆盖记录。进程使用 UTF-8 清单处理中文路径和语言提示。
+- 初始窗口依据工作区尺寸居中与限高，避免小工作区底部导航超出屏幕。版本进入 `0.1.0-preview.1`，关于信息显示完整预发布版本。
+- 最终 GPU 正向矩阵 **40/40**：`artifacts/tests/20261018-152317`，包含九组转写 GPU 组合、实时输入和取消、CUDA 配音与说话人。核心与真实媒体集成 **32/32**：`artifacts/tests/20261018-152215`。x64 兼容环境 **29/29**：`artifacts/tests/20261018-152740`，含 Parakeet / SenseVoice FP32 DirectML；Qwen3-ASR DirectML 和说话人补充 **29/29**：`artifacts/tests/20261018-151954`。x64 不是物理 x64 设备验收。
+- 更新后的原生布局此前通过 ARM64 `artifacts/ui-tests/win-arm64/20261018-150640-9fe94c60` 与 x64 `artifacts/ui-tests/win-x64/20261018-150737-04ef3449`，包含设置无重复下载控件、窗口适应工作区和真实视频关闭。最终发布构建和安装包验收仍在继续。
+
 ## 2026-10-18：字幕处理、全文问答与原生交互修复
 
 - 问答移除最多 60 条字幕及 6,000 字符的截断逻辑。长媒体逐段提取问题相关证据，再合并回答；显示核对进度。转写进行中暂不提供全文 AI 处理，避免把未完成内容当作全文。模型提炼仍可能遗漏信息，覆盖全部输入并不等于答案绝对正确。

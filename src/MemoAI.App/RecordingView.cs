@@ -23,7 +23,7 @@ public sealed partial class MainWindow
     private void RefreshRecordingChoices()
     {
         if (recorder is not null || liveRecordingTask is { IsCompleted: false }) return;
-        var models = AsrModels.All.Where(m => AsrModels.IsInstalled(m, paths.ModelRoot)).Select(m => new ModelChoice(m.Name + " · CPU", m.ManifestPath(paths.ModelRoot)))
+        var models = AsrModels.All.Where(m => m.Id != "funasr-nano-fp16" && AsrModels.IsInstalled(m, paths.ModelRoot)).Select(m => new ModelChoice(m.Name + " · ONNX", m.ManifestPath(paths.ModelRoot)))
             .Concat(ModelCatalog.Items.Where(m => m.Id.StartsWith("whisper-") && File.Exists(Path.Combine(paths.ModelRoot, m.FileName))).Select(m => new ModelChoice(m.Name, Path.Combine(paths.ModelRoot, m.FileName)))).ToList();
         if (File.Exists(settings.TranscriptionModelPath) && !models.Any(m => m.Path == settings.TranscriptionModelPath)) models.Add(new(TranscriptionEngines.ModelName(settings.TranscriptionModelPath), settings.TranscriptionModelPath));
         var selectedPath = (RecordingModel.SelectedItem as ModelChoice)?.Path ?? settings.TranscriptionModelPath;

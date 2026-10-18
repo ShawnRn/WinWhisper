@@ -10,7 +10,7 @@ public sealed class WhisperEngine(AppPaths paths) : ITranscriptionEngine
 {
     public async Task TranscribeAsync(JobRequest request, Func<JobEvent, Task> progress, CancellationToken ct)
     {
-        if (!File.Exists(request.Settings.TranscriptionModelPath)) throw new FileNotFoundException("请先在「模型与设置」下载或选择 Whisper 模型。");
+        if (!File.Exists(request.Settings.TranscriptionModelPath)) throw new FileNotFoundException("请先在「模型商店」下载或选择 Whisper 模型。");
         _ = TranscriptionOptions.FromSettings(request.Settings).ApplyTo(request.Settings);
         if (request.Settings.EnableVad && !File.Exists(request.Settings.VadModelPath))
             await progress(new("warning", "尚未配置 Silero VAD 模型，本次转写不启用静音检测；可在模型商店一键安装。"));
@@ -19,7 +19,7 @@ public sealed class WhisperEngine(AppPaths paths) : ITranscriptionEngine
         var start = request.RangeStart ?? 0;
         var end = Math.Min(request.RangeEnd ?? duration, duration);
         if (end <= start) throw new InvalidDataException("媒体没有可处理的音频时长。");
-        var candidates = request.Settings.Backend == ComputeBackend.Auto ? new[] { ComputeBackend.Cuda, ComputeBackend.Vulkan, ComputeBackend.Cpu } : [request.Settings.Backend];
+        var candidates = request.Settings.Backend == ComputeBackend.Auto ? new[] { ComputeBackend.Cuda, ComputeBackend.Vulkan, ComputeBackend.Cpu } : [request.Settings.Backend == ComputeBackend.DirectML ? ComputeBackend.Vulkan : request.Settings.Backend];
         Exception? last = null;
         foreach (var backend in candidates)
         {

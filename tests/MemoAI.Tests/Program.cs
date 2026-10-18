@@ -279,7 +279,7 @@ await Test("ASR catalog has pinned assets, languages and engine dispatch", () =>
     foreach (var m in AsrModels.All)
     {
         Check(m.Bytes > 0 && m.Sha256.Length == 64 && m.LanguageCodes.Length > 0, "模型未固定大小、校验值或语言");
-        Check(StoreModels.All.Any(s => s.Asr == m), "ASR 模型未在商店显示");
+        Check(StoreModels.All.Any(s => s.Asr == m) == (m.Id != "funasr-nano-fp16"), "商店应展示可用模型并收起未通过内容校验的 FP16 版本");
     }
     Check(!AsrModels.All.First(m => m.Id == "parakeet-v3").LanguageCodes.Contains("zh"), "Parakeet 错误宣称支持中文");
     var paths = new AppPaths(Path.Combine(run, "asr-dispatch"));
@@ -324,6 +324,7 @@ if (asrTest is not null)
             }
             var options = new AppSettings { EngineRoot = paths.EngineRoot, Language = model.LanguageCodes.Contains("en") ? "en" : "zh", EnableVad = true };
             StoreModels.Apply(StoreModels.All.First(s => s.Id == id), options, modelRoot);
+            options.Backend = ComputeBackend.Cpu;
             Check(StoreModels.IsApplied(StoreModels.All.First(s => s.Id == id), options, modelRoot), "模型无法应用");
             var audio = Path.Combine(root, "artifacts", "test-assets", "jfk.wav");
             if (model.LanguageCodes.SequenceEqual(new[] { "zh" }))
@@ -337,8 +338,55 @@ if (asrTest is not null)
             var expected = string.Join(" ", final!.Segments!.Select(s => s.Text));
             await new WorkerClient(paths).RunAsync(request, e => { if (e.Type == "completed") final = e; return Task.CompletedTask; }, CancellationToken.None);
             Check(string.Join(" ", final!.Segments!.Select(s => s.Text)) == expected, "检查点恢复内容发生变化");
-            var unsupported = Json.Read<AppSettings>(Json.Write(options)); unsupported.Backend = ComputeBackend.Cuda;
-            try { SherpaTranscription.Configuration(unsupported.TranscriptionModelPath, unsupported); throw new Exception("错误报告 CUDA 支持"); } catch (NotSupportedException) { }
+            var unsupported = Json.Read<AppSettings>(Json.Write(options)); unsupported.Backend = ComputeBackend.Vulkan;
+            try { SherpaTranscription.Configuration(unsupported.TranscriptionModelPath, unsupported); throw new Exception("错误报告 ONNX Vulkan 支持"); } catch (NotSupportedException) { }
+        });
+    }
+}
+
+await Test("GPU evidence rejects provider fallback and native inference errors", () => Sync(() =>
+{
+    var words = SentenceSegmentation.ReadOnnxWords([" coun", "tr", "y", "."], [1, 1.5f, 2, 2], [.5f, .5f, 0, .1f], 0, 3);
+    Check(words.Count == 1 && words[0].Text == " country." && words[0].Start == 1 && Math.Abs(words[0].End - 2.1) < .001, "零时长 BPE 片段导致完整词时间丢失");
+    Check(SentenceSegmentation.ReadOnnxWords([" word"], [1], [0], 0, 3).Count == 0, "为零时长单词伪造了时间范围");
+    var folder = Path.Combine(run, "gpu-proof"); Directory.CreateDirectory(folder);
+    File.WriteAllText(Path.Combine(folder, "profile-test.json"), "[{\"args\":{\"provider\":\"CPUExecutionProvider\"}}]");
+    File.WriteAllText(Path.Combine(folder, "profile-incomplete.json"), "[{broken overlapping native profile");
+    try { SherpaRuntimes.ReadProfile(folder, "cuda"); throw new Exception("CPU 被误报为 CUDA"); } catch (InvalidOperationException) { }
+    File.WriteAllText(Path.Combine(folder, "profile-test.json"), "[{\"args\":{\"provider\":\"CUDAExecutionProvider\"}},{\"args\":{\"provider\":\"CPUExecutionProvider\"}}]");
+    Check(SherpaRuntimes.ReadProfile(folder, "cuda") == (1, 1), "GPU / CPU 执行次数错误");
+    Check(SherpaRuntimes.IsNativeFailure("Non-zero status code returned while running Conv node") && SherpaRuntimes.IsNativeFailure("cuDNN is unavailable") && !SherpaRuntimes.IsNativeFailure("Some nodes were not assigned to the preferred execution providers"), "原生失败检测错误");
+}));
+var gpuTest = args.FirstOrDefault(a => a.StartsWith("--asr-gpu="))?[10..];
+if (gpuTest is not null)
+{
+    var paths = new AppPaths(Path.Combine(run, "gpu-data"), Path.Combine(root, "engines"));
+    foreach (var choice in gpuTest.Split(','))
+    {
+        var parts = choice.Split(':'); var model = AsrModels.All.First(m => m.Id == parts[0]);
+        var backend = Enum.Parse<ComputeBackend>(parts[1], true);
+        await Test("Real ONNX GPU worker, executed kernels and cache " + choice, async () =>
+        {
+            var modelRoot = Path.Combine(root, "artifacts", "test-assets", "asr-models");
+            if (!AsrModels.IsInstalled(model, modelRoot))
+            {
+                Console.WriteLine($"Downloading GPU test model {model.Name} ({model.Bytes / 1048576} MB)");
+                await AsrModels.InstallAsync(model, modelRoot, null, CancellationToken.None);
+            }
+            var audio = Path.Combine(root, "artifacts", "test-assets", "jfk.wav");
+            var language = "en";
+            if (model.LanguageCodes.SequenceEqual(new[] { "zh" })) { audio = Directory.GetFiles(Path.GetDirectoryName(model.ManifestPath(modelRoot))!, "*.wav", SearchOption.AllDirectories).First(); language = "zh"; }
+            var options = new AppSettings { Backend = backend, EngineRoot = paths.EngineRoot, TranscriptionModelPath = model.ManifestPath(modelRoot), Language = language };
+            var request = new JobRequest(Guid.NewGuid().ToString("N"), session.Id, "transcribe", audio, Path.Combine(run, choice.Replace(':', '-')), options);
+            JobEvent? final = null; using var stop = new CancellationTokenSource(TimeSpan.FromMinutes(4));
+            await new WorkerClient(paths).RunAsync(request, e => { if (e.Type == "completed") final = e; return Task.CompletedTask; }, stop.Token);
+            Check(final?.Backend == backend.ToString() && final.Device?.Contains("GPU") == true, "未确认实际 GPU 执行");
+            Check(final!.Segments?.Length > 0, "GPU 返回空字幕");
+            if (language == "en") Check(string.Join(' ', final.Segments!.Select(s => s.Text)).Contains("country", StringComparison.OrdinalIgnoreCase), "GPU 识别结果错误");
+            if (model.Id == "parakeet-v3") Check(final.Segments!.Any(SentenceSegmentation.HasReliableWords) && final.Segments.Length >= 2, "原生 token 时长丢失，英语断句没有使用真实时间戳");
+            await File.WriteAllTextAsync(Path.Combine(run, choice.Replace(':', '-') + ".json"), Json.Write(final));
+            await new WorkerClient(paths).RunAsync(request, e => { if (e.Type == "completed") final = e; return Task.CompletedTask; }, stop.Token);
+            Check(final?.Backend == "Cache" && final.Segments?.Length > 0, "GPU 检查点未恢复或被误报成新 GPU 执行");
         });
     }
 }
@@ -445,7 +493,9 @@ if (args.Contains("--ollama"))
         await File.WriteAllTextAsync(Path.Combine(run, "ollama.txt"), answer);
     });
 }
-if (args.Contains("--speech"))
+var speechGpu = args.FirstOrDefault(a => a.StartsWith("--speech-gpu="))?[13..];
+var diarizeGpu = args.FirstOrDefault(a => a.StartsWith("--diarize-gpu="))?[14..];
+if (args.Contains("--speech") || speechGpu is not null || diarizeGpu is not null)
 {
     var paths = new AppPaths(Path.Combine(run, "speech-data"), Path.Combine(root, "engines"));
     var speechRoot = Path.Combine(root, "artifacts", "test-assets", "speech");
@@ -453,6 +503,7 @@ if (args.Contains("--speech"))
     var output = Path.Combine(run, "中英配音.wav");
     var options = new AppSettings
     {
+        Backend = speechGpu is null && diarizeGpu is null ? ComputeBackend.Cpu : Enum.Parse<ComputeBackend>(speechGpu ?? diarizeGpu!, true),
         EngineRoot = paths.EngineRoot, TtsModelPath = Path.Combine(kokoro, "model.onnx"), TtsVoicesPath = Path.Combine(kokoro, "voices.bin"),
         TtsTokensPath = Path.Combine(kokoro, "tokens.txt"), TtsDataDirectory = Path.Combine(kokoro, "espeak-ng-data"),
         TtsLexiconPath = Path.Combine(kokoro, "lexicon-us-en.txt") + "," + Path.Combine(kokoro, "lexicon-zh.txt"), TtsVoice = 50,
@@ -460,20 +511,23 @@ if (args.Contains("--speech"))
         SpeakerEmbeddingModel = Path.Combine(speechRoot, "speaker-embedding.onnx")
     };
     var cues = new[] { new SubtitleSegment { Start = 0, End = 6, Text = "This is a local transcription tool.", Translation = "这是一款本地音视频转写工具。" }, new SubtitleSegment { Start = 8, End = 15, Text = "Windows ARM64 and x64 are supported. Your content stays on this computer." } };
-    await Test("Sherpa native worker generates Chinese/English time-aligned speech", async () =>
+    if (diarizeGpu is null) await Test("Sherpa native worker generates Chinese/English time-aligned speech", async () =>
     {
         var request = new JobRequest(Guid.NewGuid().ToString("N"), session.Id, "tts", "", run, options, OutputPath: output, InputSegments: cues);
-        await new WorkerClient(paths).RunAsync(request, _ => Task.CompletedTask, CancellationToken.None);
+        JobEvent? final = null;
+        await new WorkerClient(paths).RunAsync(request, e => { if (e.Type == "completed") final = e; return Task.CompletedTask; }, CancellationToken.None);
+        if (speechGpu is not null) Check(final?.Backend == options.Backend.ToString() && final.Device?.Contains("GPU 已验证") == true, "配音没有验证 GPU 执行");
         var duration = await new MediaTools(paths).ProbeAsync(output, CancellationToken.None);
         Check(duration >= 8 && duration <= 15.1, "配音时间轴没有正确对齐");
         var clip = Directory.GetFiles(Path.Combine(run, "dub"), "*.wav").Length; Check(clip >= 2, "未保存逐句配音检查点");
     });
     await Test("Sherpa speaker segmentation and embeddings run offline", async () =>
     {
-        var request = new JobRequest(Guid.NewGuid().ToString("N"), session.Id, "diarize", output, run, options, InputSegments: cues);
+        var request = new JobRequest(Guid.NewGuid().ToString("N"), session.Id, "diarize", File.Exists(output) ? output : Path.Combine(root, "artifacts", "test-assets", "jfk.wav"), run, options, InputSegments: cues);
         JobEvent? final = null;
         await new WorkerClient(paths).RunAsync(request, e => { if (e.Type == "completed") final = e; return Task.CompletedTask; }, CancellationToken.None);
         Check(final?.Segments?.Any(s => s.Speaker.Length > 0) == true, "没有生成说话人标记");
+        if (speechGpu is not null || diarizeGpu is not null) Check(final?.Backend == options.Backend.ToString() && final.Device?.Contains("GPU 已验证") == true, "说话人模型没有验证 GPU 执行");
     });
 }
 var gguf = args.FirstOrDefault(a => a.StartsWith("--gguf="))?[7..];

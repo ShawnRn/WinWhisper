@@ -21,12 +21,15 @@ public static class SentenceSegmentation
         for (var i = 0; i < tokens.Length; i++)
         {
             var text = tokens[i].Replace('▁', ' '); var start = offset + timestamps[i]; var end = Math.Min(finish, start + durations[i]);
-            if (!double.IsFinite(start) || !double.IsFinite(end) || start < offset || end <= start) return [];
+            if (!double.IsFinite(start) || !double.IsFinite(end) || start < offset || end < start) return [];
             if (words.Count > 0 && text.Length > 0 && !char.IsWhiteSpace(text[0]))
             { var last = words[^1]; words[^1] = last with { Text = last.Text + text, End = Math.Max(last.End, end) }; }
             else words.Add(new(text, start, end));
         }
-        return words.Select(w => w with { Text = ChineseTypography.Apply(w.Text) }).ToList();
+        // TDT can assign a zero duration to a continuation piece (e.g. the y
+        // in country). Merge the BPE pieces first; the complete word must still
+        // have a positive duration. Never invent an end for a zero-length word.
+        return words.Any(w => w.End <= w.Start) ? [] : words.Select(w => w with { Text = ChineseTypography.Apply(w.Text) }).ToList();
     }
 
     // Full JSON contains BPE pieces. Join pieces into words before using their

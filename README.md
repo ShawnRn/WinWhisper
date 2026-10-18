@@ -8,8 +8,9 @@
 
 - 导入本地音视频、SRT / VTT 字幕，或粘贴在线媒体链接；下载后可自动排队转写。
 - 使用 whisper.cpp 在 CUDA、Vulkan、CPU 之间选择，显示实际后端、设备、耗时和进度；按媒体保存语言、模型及细分参数。
-- 模型商店包含 Parakeet v2 / v3 / 日语版、SenseVoice Small、Paraformer、FunASR Nano、Qwen3-ASR 的 ONNX 包，支持校验下载、解压、应用及任务检查点。当前 sherpa-onnx 运行时使用 CPU，ARM64 / x64 通用模型权重分别由对应架构工作进程加载。
+- 模型商店包含 Parakeet v2 / v3 / 日语版、SenseVoice Small、Paraformer、FunASR Nano、Qwen3-ASR 的 ONNX 包，支持校验下载、解压、应用及检查点。ONNX 自动尝试 CUDA → DirectML → CPU，按执行记录确认 GPU；ARM64 的 CUDA 使用独立 x64 兼容 Worker。不同量化版本的限制见 [GPU 支持](docs/GPU.md)。
 - 商店按转写、翻译与对话、配音、语音辅助四种用途分开浏览，默认只显示转写模型；搜索和已下载筛选针对当前分类。
+- 模型下载与应用统一在商店完成；设置页只保留参数、服务和已有文件路径配置。
 - 播放、定位、搜索和编辑双语字幕，调整时间、拆分合并及撤销；媒体库支持列表和缩略图。
 - 通过 Ollama 或应用管理的 llama.cpp 翻译、总结、校对、生成章节和思维导图，并围绕内容多轮提问。聊天支持原生 Markdown、流式跟随和可点击时间引用。
 - 英语断句保留可用的词时间戳，结合原音频停顿选择边界；可选本地 AI 恢复标点，拒绝改词或漏词。旧字幕没有可靠词时间戳时保留整段时间。
@@ -76,7 +77,7 @@ WinUI 控件模板的 G2 适配由构建目标从本地固定 SDK 生成；生�
 
 实施顺序与验收记录见 [开发进度](docs/PROGRESS.md)。
 
-ONNX 模型按短音频分段处理，当前字幕使用片段时间范围，并非词级对齐；静音过滤采用能量检测，Whisper 的 Silero GGML VAD、beam、温度等参数不用于 ONNX。Parakeet v3 不支持中文。模型范围和实测情况见 [模型商店](docs/MODEL-STORE.md)。x64 界面目前在 Windows ARM64 兼容环境中验证；完整打包、长媒体和资源耗尽等专项验收仍在进行。
+ONNX 模型按短音频分段处理；支持可靠 token 起止信息的模型保留词时间，缺失信息时保持片段边界。静音过滤采用能量检测，Whisper 的 Silero GGML VAD、beam、温度等参数不用于 ONNX。Parakeet v3 不支持中文。模型范围和实测情况见 [模型商店](docs/MODEL-STORE.md)。x64 目前在 Windows ARM64 兼容环境中验证，尚未在物理 x64 设备验收；长媒体和资源耗尽等专项验收仍在进行。
 
 录音转写每 6 秒提交一个完成的音频片段，并显示待处理数量。ONNX 模型在工作进程内保持载入；Whisper 使用独立 CLI 按片段运行，较大模型可能积压。停止转写会保留录音；停止录音后先保存音频，再完成余下字幕。单个 App 内录使用 Windows 进程音频回环，包含该 App 的子进程，目标没有播放声音时录到静音。详见 [录音说明](docs/RECORDING.md)。
 

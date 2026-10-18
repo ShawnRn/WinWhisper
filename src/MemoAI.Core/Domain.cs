@@ -18,7 +18,7 @@ public static class Json
         ?? throw new InvalidDataException("数据为空或格式不正确。");
 }
 
-public enum ComputeBackend { Auto, Cuda, Vulkan, Cpu }
+public enum ComputeBackend { Auto, Cuda, Vulkan, Cpu, DirectML }
 public enum JobState { Queued, Running, Completed, Cancelled, Failed, Interrupted }
 public enum LanguageModelKind { Ollama, BuiltIn }
 public enum SubtitleTextMode { Bilingual, Original, Translation }
@@ -193,14 +193,15 @@ public sealed class AppPaths
     }
     public string FindEngine(string id, string file)
     {
-        var architectureRoot = Path.Combine(EngineRoot, Rid, id);
+        var toolRid = id is "ffmpeg" && Environment.GetEnvironmentVariable("WINWHISPER_MEDIA_RID") is "win-arm64" or "win-x64" ? Environment.GetEnvironmentVariable("WINWHISPER_MEDIA_RID")! : Rid;
+        var architectureRoot = Path.Combine(EngineRoot, toolRid, id);
         // Legacy layout is allowed only after validating each executable's machine type.
         var root = Directory.Exists(architectureRoot) ? architectureRoot : Path.Combine(EngineRoot, id);
         var found = Directory.Exists(root) ? Directory.EnumerateFiles(root, file, SearchOption.AllDirectories).FirstOrDefault() : null;
         if (found is null && id == "yt-dlp" && Directory.Exists(root))
             found = Directory.EnumerateFiles(root, Rid == "win-arm64" ? "yt-dlp_arm64.exe" : "yt-dlp.exe", SearchOption.AllDirectories).FirstOrDefault();
         if (found is null) throw new FileNotFoundException($"缺少 {Rid} 的 {id} 引擎。请运行 scripts/fetch-engines.ps1 或在设置中选择引擎目录。", file);
-        PeArchitecture.RequireCompatible(found);
+        PeArchitecture.RequireCompatible(found, toolRid);
         return found;
     }
 }
@@ -219,10 +220,12 @@ public static class PeArchitecture
         if (reader.ReadUInt32() != 0x4550) throw new InvalidDataException("PE 签名无效");
         return reader.ReadUInt16();
     }
-    public static void RequireCompatible(string path)
+    public static void RequireCompatible(string path, string? rid = null)
     {
-        var expected = AppPaths.Rid == "win-arm64" ? (ushort)0xAA64 : (ushort)0x8664;
-        if (ReadMachine(path) != expected) throw new InvalidDataException($"引擎架构不匹配（需要 {AppPaths.Rid}）：{path}");
+        rid ??= AppPaths.Rid;
+        if (rid is not ("win-arm64" or "win-x64")) throw new ArgumentException("未知的引擎架构。");
+        var expected = rid == "win-arm64" ? (ushort)0xAA64 : (ushort)0x8664;
+        if (ReadMachine(path) != expected) throw new InvalidDataException($"引擎架构不匹配（需要 {rid}）：{path}");
     }
 }
 

@@ -20,10 +20,10 @@ public sealed partial class MainWindow
         var save = new Button { FontFamily = SettingsFont, Content = "保存设置", Style = (Style)Application.Current.Resources["AccentButtonStyle"], HorizontalAlignment = HorizontalAlignment.Left };
         save.Click += async (_, _) => await SafeAsync(async () => { foreach (var write in settingWriters) write(); store.SaveSettings(settings); ApplySettings(); if (!aiBusy) { provider?.Dispose(); provider = null; } Status("设置已保存"); await Task.CompletedTask; });
         SettingsContent.Children.Add(save);
-        var openStore = new Button { FontFamily = SettingsFont, Content = "打开模型商店 · 一键下载与应用", HorizontalAlignment = HorizontalAlignment.Left };
+        var openStore = new Button { FontFamily = SettingsFont, Content = "模型商店", HorizontalAlignment = HorizontalAlignment.Left };
         openStore.Click += ModelStore_Click; SettingsContent.Children.Add(openStore);
-        var transcription = SettingsSection("转写与硬件加速", "自动模式优先 CUDA，失败后尝试 Vulkan 与 CPU。任务历史会记录实际后端。");
-        Choice(transcription, "计算后端", new[] { "自动（CUDA → Vulkan → CPU）", "CUDA", "Vulkan", "CPU" }, (int)settings.Backend, i => settings.Backend = (ComputeBackend)i);
+        var transcription = SettingsSection("转写与硬件加速", "自动模式优先 CUDA；Whisper / GGUF 回退到 Vulkan，ONNX 回退到 DirectML，最后尝试 CPU。任务历史记录实际后端。GPU 运行时在模型商店管理。");
+        Choice(transcription, "计算后端", new[] { "自动选择 GPU", "CUDA", "Vulkan（Whisper / GGUF）", "CPU", "DirectML（ONNX；Whisper / GGUF 使用 Vulkan）" }, (int)settings.Backend, i => settings.Backend = (ComputeBackend)i);
         TextSetting(transcription, "默认转写模型（在模型商店切换）", TranscriptionEngines.ModelName(settings.TranscriptionModelPath), _ => { }).IsReadOnly = true;
         TextSetting(transcription, "音频语言（auto / zh / en / ja 等）", settings.Language, v => settings.Language = v);
         var vad = new CheckBox { FontFamily = SettingsFont, Content = "启用 VAD（需要先下载或选择 Silero 模型）", IsChecked = settings.EnableVad };
@@ -83,7 +83,8 @@ public sealed partial class MainWindow
         var footer = new TextBlock { FontFamily = SettingsFont, Text = "快捷键：Ctrl+O 导入 · Ctrl+F 搜索 · Ctrl+Z 撤销 · 字幕列表空格播放/暂停 · F2 重转写片段 · Delete 删除字幕", Style = (Style)Application.Current.Resources["Muted"], FontSize = 13 };
         SettingsContent.Children.Add(footer);
         var about = SettingsSection("关于 WinWhisper", "独立开发的 Windows 本地转写与 AI 工作台。");
-        var version = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.1.0";
+        var version = typeof(MainWindow).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion.Split('+')[0] ?? "0.1.0-preview.1";
         about.Children.Add(new TextBlock { FontFamily = SettingsFont, Text = $"版本 {version}  ·  {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}\n开发者：Shawn Rain\n开源许可：MIT（第三方组件与模型遵循各自许可）", TextWrapping = TextWrapping.Wrap, FontSize = 13 });
         var github = new HyperlinkButton { FontFamily = SettingsFont, Content = "GitHub · ShawnRn/WinWhisper", NavigateUri = new Uri("https://github.com/ShawnRn/WinWhisper"), HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(0) };
         about.Children.Add(github);

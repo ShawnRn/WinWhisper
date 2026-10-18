@@ -14,6 +14,11 @@ public sealed partial class MainWindow
     private readonly Dictionary<string, (Button Translate, Button Summary)> ollamaButtons = [];
     private string[] ollamaModels = [];
     private bool readingOllama, changingStoreCategory;
+    private CancellationTokenSource? cudaRuntimeDownload;
+    private ProgressBar? cudaRuntimeProgress;
+    private TextBlock? cudaRuntimeStatus;
+    private Button? cudaRuntimeInstall;
+    private double cudaRuntimeFraction;
     private async void ModelStore_Click(object sender, RoutedEventArgs e)
     {
         if (StoreCards.Children.Count == 0) BuildModelStore(); else RefreshModelStoreStates();
@@ -46,6 +51,9 @@ public sealed partial class MainWindow
             m.Category == category && (StoreInstalledOnly.IsChecked != true || StoreModels.IsInstalled(m, settings, paths.ModelRoot)) &&
             (query.Length == 0 || $"{m.Name} {m.Subtitle} {m.Description}".Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray();
         foreach (var model in models) StoreCards.Children.Add(ModelCard(model));
+        var showRuntime = filter == 3 && "ONNX GPU CUDA DirectML 运行时 英伟达 NVIDIA".Contains(query, StringComparison.OrdinalIgnoreCase)
+            && (StoreInstalledOnly.IsChecked != true || SherpaRuntimes.Find(paths, "cuda") is not null || SherpaRuntimes.Find(paths, "directml") is not null);
+        if (showRuntime) StoreCards.Children.Add(GpuRuntimeCard());
         var localModels = filter == 1 ? ollamaModels.Where(n => query.Length == 0 || n.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray() : [];
         if (filter == 1 && (localModels.Length > 0 || query.Length == 0))
         {
@@ -63,8 +71,42 @@ public sealed partial class MainWindow
                 StoreCards.Children.Add(new ContinuousSurface { Style = (Style)Application.Current.Resources["Card"], Padding = new Thickness(18), Child = row });
             }
         }
-        if (models.Length == 0 && localModels.Length == 0) StoreCards.Children.Add(new TextBlock { Text = query.Length > 0 ? "当前分类没有匹配的模型，试试其他关键词。" : StoreInstalledOnly.IsChecked == true ? "这个分类还没有已下载的模型。取消筛选后可以浏览和下载。" : "这个分类暂时没有模型。", Style = (Style)Application.Current.Resources["Muted"] });
+        if (models.Length == 0 && localModels.Length == 0 && !showRuntime) StoreCards.Children.Add(new TextBlock { Text = query.Length > 0 ? "当前分类没有匹配的模型，试试其他关键词。" : StoreInstalledOnly.IsChecked == true ? "这个分类还没有已下载的模型。取消筛选后可以浏览和下载。" : "这个分类暂时没有模型。", Style = (Style)Application.Current.Resources["Muted"] });
         RefreshModelStoreStates();
+    }
+    private ContinuousSurface GpuRuntimeCard()
+    {
+        var panel = new StackPanel { Spacing = 10 };
+        panel.Children.Add(new TextBlock { Text = "ONNX GPU 运行时", Style = (Style)Application.Current.Resources["SectionTitle"] });
+        var directml = SherpaRuntimes.Find(paths, "directml") is not null;
+        panel.Children.Add(new TextBlock { Text = $"DirectML：{(directml ? "已集成" : "本构建未集成")} · 使用 DirectX 12 GPU。CUDA 组件用于 NVIDIA GPU；ARM64 上通过独立 x64 兼容 Worker 运行。实际加速取决于模型算子，任务中会验证并记录 GPU / CPU 执行情况。", TextWrapping = TextWrapping.Wrap, FontSize = 13 });
+        panel.Children.Add(new TextBlock { Text = "CUDA 下载约 1.21 GB，安装需约 6 GB 可用空间。来源：sherpa-onnx、llama.cpp、NVIDIA cuDNN，各组件遵循自身许可。", TextWrapping = TextWrapping.Wrap, FontSize = 13, Style = (Style)Application.Current.Resources["Muted"] });
+        var installed = SherpaRuntimes.Find(paths, "cuda") is not null;
+        cudaRuntimeInstall = new Button { Content = installed ? "CUDA 已安装" : "安装 CUDA 运行时", IsEnabled = !installed && cudaRuntimeDownload is null };
+        cudaRuntimeInstall.Click += async (_, _) => await SafeAsync(async () =>
+        {
+            if (cudaRuntimeDownload is not null || !await ConfirmAsync("安装 CUDA 运行时", "下载约 1.21 GB，至少需要 6 GB 可用空间。组件来自 sherpa-onnx、llama.cpp 和 NVIDIA，并校验 SHA-256。ARM64 使用 x64 兼容 Worker。是否继续？", "下载并安装")) return;
+            using var cancellation = new CancellationTokenSource(); cudaRuntimeDownload = cancellation; BuildModelStore();
+            try
+            {
+                var last = DateTime.MinValue;
+                await Task.Run(() => SherpaRuntimes.InstallCudaAsync(paths, new Progress<double>(p => DispatcherQueue.TryEnqueue(() =>
+                {
+                    cudaRuntimeFraction = p;
+                    if ((DateTime.UtcNow - last).TotalMilliseconds < 250 && p < 1) return; last = DateTime.UtcNow;
+                    if (cudaRuntimeProgress is not null) cudaRuntimeProgress.Value = p * 100;
+                    if (cudaRuntimeStatus is not null) cudaRuntimeStatus.Text = $"正在下载、校验与解压 · {p:P0}";
+                })), cancellation.Token), cancellation.Token);
+                Status("CUDA 运行时已安装，转写时会验证实际 GPU 执行。");
+            }
+            catch (OperationCanceledException) { Status("运行时下载已暂停，可在模型商店继续。"); }
+            finally { cudaRuntimeDownload = null; if (!closing) BuildModelStore(); }
+        });
+        panel.Children.Add(cudaRuntimeInstall);
+        cudaRuntimeStatus = new TextBlock { Text = $"正在下载、校验与解压 · {cudaRuntimeFraction:P0}", FontSize = 13, Visibility = cudaRuntimeDownload is null ? Visibility.Collapsed : Visibility.Visible }; panel.Children.Add(cudaRuntimeStatus);
+        cudaRuntimeProgress = new ProgressBar { Value = cudaRuntimeFraction * 100, Visibility = cudaRuntimeStatus.Visibility }; panel.Children.Add(cudaRuntimeProgress);
+        var cancel = new Button { Content = "暂停下载", Visibility = cudaRuntimeStatus.Visibility }; cancel.Click += (_, _) => cudaRuntimeDownload?.Cancel(); panel.Children.Add(cancel);
+        return new ContinuousSurface { Style = (Style)Application.Current.Resources["Card"], Padding = new Thickness(22), Child = panel };
     }
     private ContinuousSurface ModelCard(StoreModel model)
     {
