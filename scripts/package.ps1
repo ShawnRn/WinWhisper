@@ -70,13 +70,13 @@ if(!$ExistingStage){
             $dependencies=(Get-Content -LiteralPath $lock -Raw | ConvertFrom-Json).dependencies
             foreach($framework in $dependencies.PSObject.Properties){
                 foreach($package in $framework.Value.PSObject.Properties){
-                    $version=$package.Value.resolved
-                    if(!$version){continue}
-                    $packageRoot=Join-Path $env:USERPROFILE ".nuget/packages/$($package.Name.ToLowerInvariant())/$version"
+                    $packageVersion=$package.Value.resolved
+                    if(!$packageVersion){continue}
+                    $packageRoot=Join-Path $env:USERPROFILE ".nuget/packages/$($package.Name.ToLowerInvariant())/$packageVersion"
                     if(!(Test-Path -LiteralPath $packageRoot)){continue}
                     foreach($notice in Get-ChildItem -LiteralPath $packageRoot -File -Recurse | Where-Object Name -Match '^(LICENSE|LICENCE|COPYING|NOTICE|THIRD.PARTY)'){
                         $relative=[IO.Path]::GetRelativePath($packageRoot,$notice.FullName)
-                        $noticeTarget=Join-Path $destination "licenses/nuget/$($package.Name)/$version/$relative"
+                        $noticeTarget=Join-Path $destination "licenses/nuget/$($package.Name)/$packageVersion/$relative"
                         New-Item -ItemType Directory -Path (Split-Path $noticeTarget) -Force | Out-Null
                         Copy-Item -LiteralPath $notice.FullName -Destination $noticeTarget -Force
                     }
