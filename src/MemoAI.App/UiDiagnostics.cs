@@ -136,7 +136,11 @@ public sealed partial class MainWindow
             result["comboPopupPreservesNativeContentContract"] = popupBorders.Any(b => b is { Child: ScrollViewer { Content: ItemsPresenter }, Background: ContinuousPopupBrush paint } && ReferenceEquals(paint.Owner, b));
             TranscriptionBackend.IsDropDownOpen = true; await Task.Delay(200);
             result["transcriptionDropdownsCloseSiblings"] = TranscriptionBackend.IsDropDownOpen && !TranscriptionLanguage.IsDropDownOpen;
-            CloseTranscriptionSettings_Click(this, new()); await Task.Delay(250);
+            CloseTranscriptionSettings_Click(this, new());
+            // Native exit animations can take longer under x64 emulation. Await the
+            // Closed state instead of assuming a fixed 250 ms animation duration.
+            for (var i = 0; i < 100 && transcriptionFlyoutOpen; i++) await Task.Delay(20);
+            result["settingsCloseDetails"] = $"open={transcriptionFlyoutOpen};checked={TranscriptionSettingsButton.IsChecked};dropdown={TranscriptionBackend.IsDropDownOpen}";
             result["settingsCloseResetsToggleAndChildDropdowns"] = !transcriptionFlyoutOpen && TranscriptionSettingsButton.IsChecked != true && !TranscriptionBackend.IsDropDownOpen;
             await AiService.GpuGate.WaitAsync();
             try

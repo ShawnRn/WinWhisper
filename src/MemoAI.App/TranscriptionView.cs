@@ -16,10 +16,14 @@ public sealed partial class MainWindow
     private bool transcriptionFlyoutOpen;
     private void ToggleTranscriptionSettings_Click(object sender, RoutedEventArgs e)
     {
-        if (transcriptionFlyoutOpen || TranscriptionSettingsButton.IsChecked != true) TranscriptionFlyout.Hide();
+        if (transcriptionFlyoutOpen || TranscriptionSettingsButton.IsChecked != true) CloseTranscriptionSettings_Click(sender, e);
         else TranscriptionFlyout.ShowAt(TranscriptionSettingsButton);
     }
-    private void CloseTranscriptionSettings_Click(object sender, RoutedEventArgs e) => TranscriptionFlyout.Hide();
+    private void CloseTranscriptionSettings_Click(object sender, RoutedEventArgs e)
+    {
+        CloseTranscriptionDropdowns();
+        TranscriptionFlyout.Hide();
+    }
     private void TranscriptionFlyout_Opening(object sender, object e)
     {
         TranscriptionFlyout.AreOpenCloseAnimationsEnabled = !settings.ReduceMotion && motionSettings.AnimationsEnabled;
