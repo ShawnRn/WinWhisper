@@ -2,7 +2,7 @@
 
 安装目录中的 `licenses/`、`Assets/Licenses/` 和各引擎目录保留原始许可。应用源码的 MIT 不替代这些条款。完整组件清单见 [CREDITS](../CREDITS.md)，引擎的二进制来源与 SHA-256 见 [engine-lock.json](engine-lock.json) 和 [gpu-runtime-lock.json](gpu-runtime-lock.json)。
 
-预发布同时提供 `WinWhisper-0.1.0-preview.1-ThirdPartySources.tar.gz`，下载位置为 [GitHub Release](https://github.com/ShawnRn/WinWhisper/releases/tag/v0.1.0-preview.1)。其中包含：
+每次预发布同时提供与版本配套的 `WinWhisper-<版本>-ThirdPartySources.tar.gz`，下载位置为 [GitHub Releases](https://github.com/ShawnRn/WinWhisper/releases)。其中包含：
 
 - sherpa-onnx v1.13.8（`11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf`）及本次 DirectML 构建实际使用的静态依赖源码，包括 eSpeak NG、piper-phonemize、Kaldi、OpenFst 等。包含 DirectML 导入与 profiling 文件名补丁后的源码；补丁在 `scripts/build-sherpa-directml.ps1` 中可复现。
 - 本次 FFmpeg ARM64 与 x64 二进制对应的 FFmpeg 源码（`e9b3c55fe0321915a70f44f30b276ef2afdc3a0c`、`94cba3150c6b83057ed48b833689adc806715cc0`），以及相应上游构建脚本和补丁。外部编解码库的获取及配置见这些脚本、FFmpeg 包内 readme/configuration；保留它们各自的许可。

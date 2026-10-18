@@ -1,7 +1,7 @@
 param(
     [ValidateSet('Universal','x64','arm64','All')][string]$Architecture='All',
-    [string]$Version='0.1.0-preview.1',
-    [string]$AppOutputRoot='artifacts/ui-v2',
+    [string]$Version='0.1.0-preview.2',
+    [string]$AppOutputRoot='artifacts/release-apps',
     [string]$ExistingStage='',
     [string]$ExistingPayloads=''
 )

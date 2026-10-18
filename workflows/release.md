@@ -1,6 +1,6 @@
 # 发布
 
-目标预发布为 `v0.1.0-preview.1`；发布前必须完成相应构建、检查和安装验证。
+当前打包目标为 `v0.1.0-preview.2`；发布前必须完成相应构建、检查和安装验证。已有预发布标签与资产保持不变。
 
 - 输出 Universal、x64、ARM64 三种标准 Windows 安装程序。Universal 自动选择系统架构，必要的兼容 GPU Worker 单独标明架构。
 - 支持仅当前用户和所有用户安装；所有用户安装按 Windows 要求提权。桌面快捷方式作为可选任务，默认不勾选。
@@ -16,9 +16,9 @@
 ```powershell
 ./scripts/bootstrap-packaging.ps1
 # 两个 app 输出必须来自同一源码版本，并完成原生回归；Worker 按架构 publish。
-./scripts/package.ps1 -AppOutputRoot artifacts/preview-apps -Architecture All
+./scripts/package.ps1 -AppOutputRoot artifacts/release-apps -Architecture All
 ./scripts/package-sources.ps1
-./scripts/test-installer.ps1 -Installer artifacts/release/0.1.0-preview.1/WinWhisper-0.1.0-preview.1-Universal-Setup.exe -PlaybackVideo 'C:/path/to/video.mp4'
+./scripts/test-installer.ps1 -Installer artifacts/release/0.1.0-preview.2/WinWhisper-0.1.0-preview.2-Universal-Setup.exe -PlaybackVideo 'C:/path/to/video.mp4'
 # x64、ARM64 包分别重复测试；不要并发运行会共享测试注册表项的安装测试。
 ```
 

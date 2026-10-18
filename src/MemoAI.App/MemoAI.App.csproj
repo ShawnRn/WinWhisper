@@ -16,7 +16,7 @@
     <Product>WinWhisper</Product>
     <Title>WinWhisper</Title>
     <Authors>Shawn Rain</Authors>
-    <Version>0.1.0-preview.2-dev</Version>
+    <Version>0.1.0-preview.2</Version>
     <ApplicationIcon>Assets/Brand/WinWhisper.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
