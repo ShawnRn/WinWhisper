@@ -24,6 +24,7 @@ $prefix=Join-Path $root '.tools/spirv-install'
 if($LASTEXITCODE){throw 'SPIRV configure failed'}
 & $cmake --install '.tools/spirv-build' --config Release
 if($LASTEXITCODE){throw 'SPIRV install failed'}
+Copy-Item "$prefix/include/spirv" "$headers/include" -Recurse -Force
 $machine=if($Rid -eq 'win-arm64'){'ARM64'}else{'X64'}
 $libDirectory=Join-Path $sdk "Lib/$Rid"; New-Item -ItemType Directory -Path $libDirectory -Force | Out-Null
 $exports=& "$tool/dumpbin.exe" /nologo /exports "$env:WINDIR/System32/vulkan-1.dll"
@@ -43,7 +44,9 @@ $llvm=Join-Path $vs 'VC/Tools/Llvm/ARM64/bin'
 if(!(Test-Path "$llvm/clang-cl.exe")){$llvm=Join-Path $vs 'VC/Tools/Llvm/x64/bin'}
 $env:PATH="$llvm;$([IO.Path]::GetDirectoryName($ninja));$env:PATH"
 $toolchain=Join-Path $source "cmake/$target-windows-llvm.cmake"
+$compilerTarget=if($Rid -eq 'win-arm64'){'aarch64-pc-windows-msvc'}else{'x86_64-pc-windows-msvc'}
 & $cmake -S $source -B $build -G 'Ninja Multi-Config' "-DCMAKE_TOOLCHAIN_FILE=$toolchain" `
+    "-DCMAKE_C_COMPILER_TARGET=$compilerTarget" "-DCMAKE_CXX_COMPILER_TARGET=$compilerTarget" `
     -DGGML_VULKAN=ON -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF -DBUILD_SHARED_LIBS=ON `
     -DGGML_BACKEND_DL=ON -DWHISPER_SDL2=OFF -DWHISPER_BUILD_TESTS=OFF `
     "-DVulkan_INCLUDE_DIR=$headers/include" "-DVulkan_LIBRARY=$libDirectory/vulkan-1.lib" `

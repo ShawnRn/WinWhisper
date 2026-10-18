@@ -239,6 +239,29 @@ if (gguf is not null)
         await File.WriteAllTextAsync(Path.Combine(run, "built-in.txt"), answer);
     });
 }
+if (args.Contains("--benchmark"))
+{
+    var paths = new AppPaths(Path.Combine(run, "benchmark-data"), Path.Combine(root, "engines"));
+    var model = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MemoAI.Native", "models", "ggml-large-v3-turbo.bin");
+    var audio = Path.Combine(root, "artifacts", "test-assets", "jfk.wav");
+    var benchmark = new List<object>();
+    foreach (var backend in new[] { ComputeBackend.Cuda, ComputeBackend.Vulkan, ComputeBackend.Cpu })
+    {
+        if (backend == ComputeBackend.Vulkan && !Directory.Exists(Path.Combine(paths.EngineRoot, AppPaths.Rid, "whisper-vulkan"))) { Console.WriteLine("SKIP Vulkan: engine still building"); continue; }
+        await Test($"large-v3-turbo real {backend} benchmark", async () =>
+        {
+            var directory = Path.Combine(run, "large-" + backend); Directory.CreateDirectory(directory);
+            var options = new AppSettings { EngineRoot = paths.EngineRoot, TranscriptionModelPath = model, Backend = backend, Language = "en", EnableVad = false };
+            var request = new JobRequest(Guid.NewGuid().ToString("N"), session.Id, "transcribe", audio, directory, options);
+            JobEvent? complete = null; var watch = Stopwatch.StartNew();
+            await new WorkerClient(paths).RunAsync(request, e => { if (e.Type == "completed") complete = e; return Task.CompletedTask; }, CancellationToken.None);
+            var text = string.Join(" ", complete!.Segments!.Select(s => s.Text)); Check(text.Contains("country", StringComparison.OrdinalIgnoreCase), "模型没有识别出测试音频");
+            var logs = Directory.GetFiles(directory, "*.engine.log", SearchOption.AllDirectories).Select(File.ReadAllText).ToArray();
+            benchmark.Add(new { model = "large-v3-turbo", backend, complete.Device, complete.ElapsedSeconds, complete.RealTimeFactor, wallSeconds = watch.Elapsed.TotalSeconds, transcript = text, engineLog = logs.Single() });
+        });
+    }
+    await File.WriteAllTextAsync(Path.Combine(run, "large-benchmark.json"), Json.Write(benchmark));
+}
 await File.WriteAllTextAsync(Path.Combine(run, "results.json"), Json.Write(results));
 Console.WriteLine($"\n{results.Count - failures}/{results.Count} passed. Report: {run}");
 Environment.ExitCode = failures == 0 ? 0 : 1;

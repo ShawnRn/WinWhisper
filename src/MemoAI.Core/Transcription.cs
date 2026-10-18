@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading.Channels;
 
 namespace MemoAI.Core;
 
@@ -10,6 +11,8 @@ public sealed class WhisperEngine(AppPaths paths) : ITranscriptionEngine
     public async Task TranscribeAsync(JobRequest request, Func<JobEvent, Task> progress, CancellationToken ct)
     {
         if (!File.Exists(request.Settings.TranscriptionModelPath)) throw new FileNotFoundException("请先在「模型与设置」下载或选择 Whisper 模型。");
+        if (request.Settings.EnableVad && !File.Exists(request.Settings.VadModelPath))
+            await progress(new("warning", "尚未配置 Silero VAD 模型，本次转写不启用静音检测；可在模型商店一键安装。"));
         var media = new MediaTools(paths);
         var duration = await media.ProbeAsync(request.MediaPath, ct);
         var start = request.RangeStart ?? 0;
@@ -48,7 +51,17 @@ public sealed class WhisperEngine(AppPaths paths) : ITranscriptionEngine
                 var checkpoint = output + ".segments.json";
                 await progress(new("progress", $"{backend} · 片段 {chunk + 1}/{chunkCount}", (double)chunk / chunkCount, Backend: backend.ToString(), Device: device));
                 List<SubtitleSegment> segments;
-                if (File.Exists(checkpoint)) segments = Json.Read<List<SubtitleSegment>>(await File.ReadAllTextAsync(checkpoint, ct));
+                if (File.Exists(checkpoint))
+                {
+                    segments = Json.Read<List<SubtitleSegment>>(await File.ReadAllTextAsync(checkpoint, ct));
+                    if (File.Exists(output + ".engine.log"))
+                    {
+                        var cachedLog = await File.ReadAllTextAsync(output + ".engine.log", ct);
+                        var cachedDevice = Regex.Match(cachedLog, @"(?im)(?:Device\s+\d+|device\s+\d+)\s*:\s*([^\r\n]+)");
+                        if (cachedDevice.Success) device = cachedDevice.Groups[1].Value.Trim();
+                    }
+                    await progress(new("progress", $"从检查点恢复片段 {chunk + 1}/{chunkCount}", (double)chunk / chunkCount, Backend: backend.ToString(), Device: device));
+                }
                 else
                 {
                     var wav = output + ".wav";
@@ -56,7 +69,23 @@ public sealed class WhisperEngine(AppPaths paths) : ITranscriptionEngine
                     var args = new List<string> { "-m", request.Settings.TranscriptionModelPath, "-f", wav, "-l", request.Settings.Language, "-ojf", "-of", output, "-pp", "-t", Math.Clamp(Environment.ProcessorCount / 2, 2, 8).ToString() };
                     if (backend == ComputeBackend.Cpu) args.Add("-ng");
                     if (request.Settings.EnableVad && File.Exists(request.Settings.VadModelPath)) args.AddRange(["--vad", "--vad-model", request.Settings.VadModelPath]);
-                    var result = await Processes.RunAsync(cli, args, ct: ct);
+                    if (!string.IsNullOrWhiteSpace(request.Settings.Glossary)) args.AddRange(["--prompt", request.Settings.Glossary]);
+                    var updates = Channel.CreateUnbounded<JobEvent>(new UnboundedChannelOptions { SingleReader = true });
+                    var relay = Task.Run(async () => { await foreach (var update in updates.Reader.ReadAllAsync(ct)) await progress(update); }, ct);
+                    ProcessResult result;
+                    try
+                    {
+                        result = await Processes.RunAsync(cli, args, onError: line =>
+                        {
+                            var percent = Regex.Match(line, @"progress\s*=\s*(\d+)%");
+                            if (percent.Success)
+                            {
+                                var local = int.Parse(percent.Groups[1].Value, CultureInfo.InvariantCulture) / 100d;
+                                updates.Writer.TryWrite(new("progress", $"{backend} · 片段 {chunk + 1}/{chunkCount} · {local:P0}", (chunk + local) / chunkCount, Backend: backend.ToString(), Device: device));
+                            }
+                        }, ct: ct);
+                    }
+                    finally { updates.Writer.TryComplete(); await relay; }
                     await File.WriteAllTextAsync(output + ".engine.log", result.Error + result.Output, ct);
                     Processes.EnsureSuccess(result, $"{backend} 转写");
                     if (backend == ComputeBackend.Cuda && !Regex.IsMatch(result.Error, @"(?i)using CUDA\d* backend"))
