@@ -22,7 +22,8 @@ public sealed class JobScheduler : IJobScheduler, IAsyncDisposable
     public async Task<JobRecord> EnqueueAsync(MediaSession session, string operation, CancellationToken ct = default)
     {
         var job = new JobRecord { SessionId = session.Id, Title = session.Title, Operation = operation };
-        var snapshot = Json.Read<AppSettings>(Json.Write(settings()));
+        var defaults = settings();
+        var snapshot = operation == "transcribe" && session.Transcription is not null ? session.Transcription.ApplyTo(defaults) : Json.Read<AppSettings>(Json.Write(defaults));
         snapshot.EngineRoot = paths.EngineRoot;
         job.Request = new(job.Id, session.Id, operation, session.MediaPath, paths.SessionDirectory(session.Id), snapshot, InputSegments: session.Segments.Select(s => s.Copy()).ToArray());
         await AddAsync(job, ct); return job;
@@ -30,7 +31,7 @@ public sealed class JobScheduler : IJobScheduler, IAsyncDisposable
     public async Task EnqueueRangeAsync(MediaSession session, double start, double end, CancellationToken ct = default)
     {
         var job = new JobRecord { SessionId = session.Id, Title = session.Title, Operation = "transcribe-range" };
-        var snapshot = Json.Read<AppSettings>(Json.Write(settings())); snapshot.EngineRoot = paths.EngineRoot;
+        var snapshot = session.Transcription?.ApplyTo(settings()) ?? Json.Read<AppSettings>(Json.Write(settings())); snapshot.EngineRoot = paths.EngineRoot;
         job.Request = new(job.Id, session.Id, "transcribe", session.MediaPath, paths.SessionDirectory(session.Id), snapshot, start, end);
         await AddAsync(job, ct);
     }
@@ -39,7 +40,8 @@ public sealed class JobScheduler : IJobScheduler, IAsyncDisposable
         if (original.Request is null) throw new InvalidOperationException("该任务缺少可恢复的请求。");
         var job = new JobRecord { SessionId = original.SessionId, Title = original.Title, Operation = original.Operation };
         // Retry uses current settings so a missing model or backend can be corrected.
-        var snapshot = Json.Read<AppSettings>(Json.Write(settings())); snapshot.EngineRoot = paths.EngineRoot;
+        var options = store.GetSession(original.SessionId)?.Transcription;
+        var snapshot = original.Request.Operation == "transcribe" && options is not null ? options.ApplyTo(settings()) : Json.Read<AppSettings>(Json.Write(settings())); snapshot.EngineRoot = paths.EngineRoot;
         job.Request = original.Request with { Id = job.Id, Settings = snapshot };
         await AddAsync(job, ct);
     }
@@ -60,7 +62,7 @@ public sealed class JobScheduler : IJobScheduler, IAsyncDisposable
                 try
                 {
                     await AiService.GpuGate.WaitAsync(source.Token); gateHeld = true;
-                    job.State = JobState.Running; job.Message = "正在初始化"; store.SaveJob(job); await notify(job, null);
+                    job.State = JobState.Running; job.StartedAt = DateTimeOffset.Now; job.Message = "正在初始化"; store.SaveJob(job); await notify(job, null);
                     await new WorkerClient(paths).RunAsync(job.Request!, async e =>
                     {
                         job.Message = e.Message; job.Progress = e.Progress;

@@ -24,6 +24,8 @@ if ($Extended) {
     $specs += @{id='llama-cpu'; repo='ggml-org/llama.cpp'; tag='b11716'; asset='llama-b11716-bin-win-cpu-arm64.zip'}
     $specs += @{id='sherpa'; repo='k2-fsa/sherpa-onnx'; tag='v1.13.8'; asset='sherpa-onnx-v1.13.8-win-arm64-shared-MD-Release.tar.bz2'}
 }
+$denoAsset=if($Rid -eq 'win-arm64'){'deno-aarch64-pc-windows-msvc.zip'}else{'deno-x86_64-pc-windows-msvc.zip'}
+$specs += @{id='deno'; repo='denoland/deno'; tag='v2.9.7'; asset=$denoAsset}
 if ($Extended -and $Rid -eq 'win-x64') {
     foreach ($spec in $specs) { if ($spec.repo -eq 'ggml-org/llama.cpp') { $spec.asset = $spec.asset -replace 'arm64','x64' }; if($spec.id -eq 'sherpa') {$spec.asset = $spec.asset -replace 'win-arm64','win-x64'} }
 }

@@ -1,0 +1,5 @@
+Noto Sans SC variable font, distributed under the SIL Open Font License 1.1.
+Source: https://github.com/google/fonts/tree/47d54ca1ebb14fd864695f1d39dc734f39017c33/ofl/notosanssc
+File: NotoSansSC[wght].ttf (renamed to NotoSansSC.ttf without changing contents)
+SHA-256: a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da
+License: OFL.txt in this directory.

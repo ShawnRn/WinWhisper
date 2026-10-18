@@ -34,7 +34,7 @@ public sealed partial class MainWindow : Window
     private readonly Stack<string> undo = [];
     private MediaSession? current;
     private SubtitleSegment? selected;
-    private bool selecting, loading, dirty, closing, aiBusy;
+    private bool selecting, loading, dirty, closing, aiBusy, windowClosed, shutdownComplete;
     private CancellationTokenSource? aiCancellation;
     private LocalLanguageModelProvider? provider;
     private float[] waveform = [];
@@ -55,6 +55,9 @@ public sealed partial class MainWindow : Window
         RecentList.ItemsSource = sessions; SubtitleList.ItemsSource = visibleSegments; JobList.ItemsSource = jobLabels;
         scheduler = new JobScheduler(paths, store, () => settings, NotifyJobAsync);
         RefreshLibrary(); RefreshJobs(); BuildSettings();
+        navigationReady = true; ShowPage(LibraryView); UpdateAiAvailability();
+        noticeTimer.Tick += (_, _) => { noticeTimer.Stop(); OperationNotice.IsOpen = false; };
+        recordingTimer.Tick += (_, _) => RecordingTime.Text = recordingWatch.Elapsed.ToString(@"hh\:mm\:ss");
         var mediaPlayer = new MediaPlayer { AutoPlay = false };
         mediaPlayer.MediaOpened += (_, _) => DispatcherQueue.TryEnqueue(() => Player_MediaOpened(this, new RoutedEventArgs()));
         mediaPlayer.MediaFailed += (_, args) => DispatcherQueue.TryEnqueue(() => Player_MediaFailed(args.ErrorMessage));
@@ -62,20 +65,26 @@ public sealed partial class MainWindow : Window
         ArchitectureLabel.Text = $"{AppPaths.Rid.Replace("win-", "").ToUpperInvariant()}  ·  本地 AI";
         saveTimer.Tick += async (_, _) => { saveTimer.Stop(); if (dirty) await SafeAsync(SaveCurrentAsync); };
         playbackTimer.Tick += PlaybackTick; playbackTimer.Start();
-        Player.TransportControls.IsPlaybackRateButtonVisible = true;
-        Player.TransportControls.IsPlaybackRateEnabled = true;
+        PlaybackSeek.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler((_, _) => seekingPlayback = true), true);
+        PlaybackSeek.PointerCaptureLost += (_, _) => seekingPlayback = false;
         Root.KeyboardAccelerators.Add(Accelerator(VirtualKey.O, VirtualKeyModifiers.Control, Import_Click));
         Root.KeyboardAccelerators.Add(Accelerator(VirtualKey.F, VirtualKeyModifiers.Control, (_, _) => SubtitleSearch.Focus(FocusState.Programmatic)));
         Root.KeyboardAccelerators.Add(Accelerator(VirtualKey.Z, VirtualKeyModifiers.Control, Undo_Click));
         Closed += Window_Closed;
         AppWindow.Closing += async (_, e) =>
         {
-            if (closing) return;
-            e.Cancel = true; closing = true; playbackTimer.Stop(); saveTimer.Stop(); aiCancellation?.Cancel();
+            if (shutdownComplete) return;
+            e.Cancel = true; if (closing) return;
+            closing = true; playbackTimer.Stop(); saveTimer.Stop(); noticeTimer.Stop(); recordingTimer.Stop(); aiCancellation?.Cancel(); linkCancellation?.Cancel();
             foreach (var cancellation in modelDownloads.Values) cancellation.Cancel();
             try { await SaveCurrentAsync(); await scheduler.DisposeAsync(); provider?.Dispose(); if (recorder is not null) await recorder.StopAsync(); }
             catch (Exception ex) { File.AppendAllText(Path.Combine(paths.DataRoot, "shutdown.log"), ex + "\n"); }
-            finally { recorder?.Dispose(); recorder = null; floating?.Close(); Close(); }
+            finally
+            {
+                recorder?.Dispose(); recorder = null; floating?.Close(); shutdownComplete = true;
+                // Finish this Closing event before closing again: cleanup may complete synchronously.
+                DispatcherQueue.TryEnqueue(() => { if (!windowClosed) Close(); });
+            }
         };
         Root.Loaded += (_, _) =>
         {
@@ -98,9 +107,11 @@ public sealed partial class MainWindow : Window
     }
     private void Status(string message, double? progress = null)
     {
-        StatusText.Text = message.Replace('\n', ' ');
-        StatusProgress.Visibility = progress.HasValue ? Visibility.Visible : Visibility.Collapsed;
-        if (progress.HasValue) StatusProgress.Value = progress.Value * 100;
+        noticeTimer.Stop(); OperationNotice.Message = message.Replace('\n', ' '); OperationNotice.IsOpen = true;
+        OperationProgress.Visibility = progress.HasValue ? Visibility.Visible : Visibility.Collapsed;
+        OperationProgress.IsIndeterminate = progress == 0;
+        if (progress.HasValue) OperationProgress.Value = Math.Clamp(progress.Value, 0, 1) * 100;
+        else noticeTimer.Start();
     }
     private async Task MessageAsync(string title, string message)
     {
@@ -117,7 +128,10 @@ public sealed partial class MainWindow : Window
     }
     private void ShowPage(UIElement page)
     {
-        foreach (var p in new UIElement[] { LibraryView, WorkspaceView, QueueView, SettingsView, ModelStoreView }) p.Visibility = p == page ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var p in new UIElement[] { LibraryView, WorkspaceView, QueueView, RecordView, LinkView, SettingsView, ModelStoreView }) p.Visibility = p == page ? Visibility.Visible : Visibility.Collapsed;
+        synchronizingNavigation = true;
+        try { Sidebar.SelectedItem = page == QueueView ? NavQueue : page == RecordView ? NavRecord : page == LinkView ? NavLink : page == SettingsView ? NavSettings : page == ModelStoreView ? NavModels : NavLibrary; }
+        finally { synchronizingNavigation = false; }
     }
     private void ApplySettings()
     {
@@ -127,7 +141,7 @@ public sealed partial class MainWindow : Window
         if (Root.RequestedTheme != theme) Root.RequestedTheme = theme;
         if (settings.ReduceMotion) { if (SystemBackdrop is not null) SystemBackdrop = null; }
         else if (SystemBackdrop is not MicaBackdrop) SystemBackdrop = new MicaBackdrop();
-        AiProviderLabel.Text = (settings.ModelProvider == LanguageModelKind.Ollama ? "Ollama" : "内置 llama.cpp") + " · 内容仅在本机处理";
+        UpdateAiModelLabel();
     }
     private void RefreshLibrary()
     {
@@ -162,14 +176,23 @@ public sealed partial class MainWindow : Window
     private async Task OpenSessionAsync(MediaSession session)
     {
         await SaveCurrentAsync(); current = session; selected = null; undo.Clear(); lastFollowId = null; waveform = [];
+        var formatted = false;
+        foreach (var cue in session.Segments)
+        {
+            var original = ChineseTypography.Apply(cue.Text); var translation = ChineseTypography.Apply(cue.Translation);
+            if (original != cue.Text || translation != cue.Translation) { cue.Text = original; cue.Translation = translation; formatted = true; }
+        }
+        if (formatted) Dirty();
         SessionTitle.Text = session.Title; SessionMeta.Text = $"{session.Folder}  ·  {session.Segments.Count} 条字幕  ·  {session.DurationLabel}";
-        AiOutput.Text = string.IsNullOrWhiteSpace(session.Summary) ? "转写完成后，在这里翻译、总结，或向这段内容提问。" : session.Summary;
-        AiOutput.Visibility = Visibility.Visible; MindMapTree.Visibility = Visibility.Collapsed;
+        LoadChat(session);
+        if (!aiBusy) { AiActivityText.Text = session.Segments.Count > 0 ? "已就绪 · 选择一项本地 AI 操作。" : "转写或导入字幕后，即可使用本地 AI。"; AiActivityDetails.Text = ""; }
+        LoadTranscriptionOptions(); RefreshTranscriptionProgress();
         SubtitleSearch.Text = ""; TrackSegments(); RefreshSubtitles(); ShowPage(WorkspaceView);
         selecting = true; OriginalEditor.Text = ""; TranslationEditor.Text = ""; selecting = false;
         Player.Source = null;
         var mediaPath = File.Exists(session.PlaybackPath) ? session.PlaybackPath : session.MediaPath;
         if (File.Exists(mediaPath)) Player.Source = MediaSource.CreateFromUri(new Uri(mediaPath));
+        PlaybackButton.IsEnabled = PlaybackSeek.IsEnabled = File.Exists(mediaPath);
         UpdateEditState();
     }
     private void RefreshSubtitles()
@@ -241,20 +264,9 @@ public sealed partial class MainWindow : Window
     {
         if (e.DataView.Contains(StandardDataFormats.StorageItems)) await SafeAsync(async () => await ImportPathsAsync((await e.DataView.GetStorageItemsAsync()).OfType<StorageFile>().Select(f => f.Path)));
     }
-    private async void Link_Click(object sender, RoutedEventArgs e) => await SafeAsync(async () =>
-    {
-        var input = new TextBox { PlaceholderText = "YouTube / 播客 / 媒体 URL", MinWidth = 420 };
-        var clipboard = Clipboard.GetContent(); if (clipboard.Contains(StandardDataFormats.Text)) { var text = await clipboard.GetTextAsync(); if (Uri.TryCreate(text, UriKind.Absolute, out _)) input.Text = text; }
-        if (!await ConfirmAsync("导入在线链接", input, "下载媒体")) return;
-        var session = new MediaSession { SourceUrl = input.Text.Trim(), Title = "在线媒体" };
-        Status("正在下载在线媒体…", 0);
-        session.MediaPath = await new MediaTools(paths).DownloadAsync(session.SourceUrl, paths.SessionDirectory(session.Id), CancellationToken.None, line => DispatcherQueue.TryEnqueue(() => Status(line)));
-        session.Title = Path.GetFileNameWithoutExtension(session.MediaPath); session.Duration = await new MediaTools(paths).ProbeAsync(session.MediaPath, CancellationToken.None);
-        store.SaveSession(session); sessions.Insert(0, session); RefreshLibrary(); await OpenSessionAsync(session); Status("在线媒体已导入");
-    });
     private void RequireSession() { if (current is null) throw new InvalidOperationException("请先导入或打开一段媒体。"); }
     private void RequireSubtitles() { RequireSession(); if (current!.Segments.Count == 0) throw new InvalidOperationException("请先转写或导入字幕。"); }
-    private async void Transcribe_Click(object sender, RoutedEventArgs e) => await SafeAsync(async () => { RequireSession(); if (current!.Segments.Count > 0 && !await ConfirmAsync("重新转写", "新转写结果会替换当前字幕。已有字幕可先导出备份。", "重新转写")) return; await SaveCurrentAsync(); await scheduler.EnqueueAsync(current, "transcribe"); Status("已加入后台转写队列"); });
+    private async void Transcribe_Click(object sender, RoutedEventArgs e) => await SafeAsync(StartTranscriptionAsync);
     private async void Batch_Click(object sender, RoutedEventArgs e) => await SafeAsync(async () =>
     {
         var list = LibraryList.SelectedItems.OfType<MediaSession>().Where(s => File.Exists(s.MediaPath)).ToArray();
@@ -286,9 +298,8 @@ public sealed partial class MainWindow : Window
                         if (current?.Id == session.Id) { current = session; TrackSegments(); RefreshSubtitles(); }
                     }
                 }
-                Status($"{job.Title} · {job.Message}", job.State == JobState.Running ? job.Progress : null);
-                if (e?.Type == "completed" && e.Path is not null) Status("已保存：" + e.Path);
-                RefreshJobs(); UpdateEditState();
+                RefreshJobs(); RefreshTranscriptionProgress(); UpdateEditState();
+                if (!job.Operation.StartsWith("transcribe", StringComparison.Ordinal) && (job.State is JobState.Completed or JobState.Failed || e?.Type == "completed")) Status(job.Message);
                 completion.SetResult();
             }
             catch (Exception ex) { completion.SetException(ex); }
@@ -328,10 +339,14 @@ public sealed partial class MainWindow : Window
     {
         var busy = aiBusy || current is not null && jobs.Any(j => j.SessionId == current.Id && j.State == JobState.Running);
         OriginalEditor.IsEnabled = !busy; TranslationEditor.IsEnabled = !busy;
+        UpdateAiAvailability();
     }
     private void PlaybackTick(object? sender, object e)
     {
-        if (current is null || Player.MediaPlayer is null) return;
+        if (closing || windowClosed) return;
+        if (WorkspaceView.Visibility == Visibility.Visible && (DateTime.UtcNow - lastProgressRefresh).TotalSeconds >= 1) { lastProgressRefresh = DateTime.UtcNow; RefreshTranscriptionProgress(); if (aiBusy) RefreshAiElapsed(); }
+        if (current is null || Player.Source is null || Player.MediaPlayer is null) return;
+        RefreshPlaybackControls();
         var seconds = Player.MediaPlayer.PlaybackSession.Position.TotalSeconds;
         var cue = current.Segments.FirstOrDefault(s => s.Start <= seconds && s.End > seconds);
         floating?.SetSubtitle(cue is null ? "" : cue.Text + (cue.Translation.Length > 0 ? "\n" + cue.Translation : ""));
@@ -342,6 +357,7 @@ public sealed partial class MainWindow : Window
     {
         if (current is null || Player.MediaPlayer is null) return;
         current.Duration = Player.MediaPlayer.PlaybackSession.NaturalDuration.TotalSeconds; Dirty();
+        RefreshPlaybackControls();
     }
     private async void Player_MediaFailed(string errorMessage) => await SafeAsync(async () =>
     {
@@ -355,45 +371,53 @@ public sealed partial class MainWindow : Window
     {
         RequireSubtitles(); if (aiBusy) throw new InvalidOperationException("已有 AI 任务正在处理，请等待或停止。");
         var operation = (sender as FrameworkElement)?.Tag as string ?? "summary";
+        if (operation == "ask" && string.IsNullOrWhiteSpace(QuestionBox.Text)) throw new InvalidOperationException("请先输入问题。");
+        var question = QuestionBox.Text;
         var session = current!; var choice = SubtitleList.SelectedItems.OfType<SubtitleSegment>().OrderBy(s => s.Start).ToArray();
         var segments = choice.Length > 0 ? choice : session.Segments.ToArray();
+        var runtimeSettings = Json.Read<AppSettings>(Json.Write(settings));
+        var chatHistory = session.Chat.Select(t => new ChatTurn { Role = t.Role, Content = t.Content }).ToArray();
+        var response = BeginChatResponse(session, operation, question);
         aiCancellation = new(); aiBusy = true; UpdateEditState(); var gateHeld = false;
+        BeginAiFeedback(sender as Button, operation, runtimeSettings.ModelProvider == LanguageModelKind.BuiltIn ? Path.GetFileNameWithoutExtension(runtimeSettings.GgufPath) : operation == "translate" ? runtimeSettings.TranslationModel : runtimeSettings.SummaryModel);
         try
         {
-            Status("等待本地计算资源…", 0);
+            await Task.Yield();
             await AiService.GpuGate.WaitAsync(aiCancellation.Token); gateHeld = true;
-            var runtimeSettings = Json.Read<AppSettings>(Json.Write(settings));
+            SetAiFeedback(AiOperationName(operation) + " · 正在加载模型 / 等待首个结果…");
             provider?.Dispose(); provider = new LocalLanguageModelProvider(paths, runtimeSettings); var ai = new AiService(provider, runtimeSettings);
-            AiOutput.Visibility = Visibility.Visible; MindMapTree.Visibility = Visibility.Collapsed;
+            ShowChat();
             if (operation is "translate" or "correct")
             {
                 Snapshot();
-                async Task Checkpoint(int count) { store.SaveSession(session); Status($"{(operation == "translate" ? "翻译" : "校对")}字幕 {count}/{segments.Length}", (double)count / segments.Length); await Task.CompletedTask; }
+                async Task Checkpoint(int count) { store.SaveSession(session); SetAiFeedback($"{AiOperationName(operation)} · {count}/{segments.Length}", (double)count / segments.Length); await Task.CompletedTask; }
                 if (operation == "translate") await ai.TranslateAsync(segments, Checkpoint, aiCancellation.Token);
                 else await ai.CorrectAsync(segments, Checkpoint, aiCancellation.Token);
-                RefreshSubtitles();
+                response.Content = $"已{(operation == "translate" ? "翻译" : "校对")} {segments.Length} 条字幕，结果已写入左侧字幕列表。";
+                if (current?.Id == session.Id) RefreshSubtitles();
             }
             else
             {
-                AiOutput.Text = "";
                 var watch = Stopwatch.StartNew(); var b = new StringBuilder();
-                Task Delta(string text) { b.Append(text); if (watch.ElapsedMilliseconds > 80) { AiOutput.Text = b.ToString(); watch.Restart(); } return Task.CompletedTask; }
+                Task Delta(string text) { b.Append(text); if (watch.ElapsedMilliseconds > 250) { response.Content = ChineseTypography.Apply(b.ToString()); FollowChat(); SetAiFeedback($"{AiOperationName(operation)} · 生成中，已接收 {b.Length} 字符"); watch.Restart(); } return Task.CompletedTask; }
                 string answer;
                 if (operation == "ask")
                 {
-                    if (string.IsNullOrWhiteSpace(QuestionBox.Text)) throw new InvalidOperationException("请先输入问题。");
-                    answer = await ai.AskAsync(session, QuestionBox.Text, Delta, aiCancellation.Token);
+                    answer = await ai.AskAsync(session, question, Delta, aiCancellation.Token, chatHistory);
                 }
                 else answer = await ai.SummarizeAsync(session, operation, Delta, aiCancellation.Token);
-                AiOutput.Text = answer;
+                response.Content = answer; FollowChat();
                 if (operation == "summary") session.Summary = answer;
                 else if (operation == "chapters") session.Chapters = answer;
-                else if (operation == "mindmap") { session.MindMapJson = AiService.ExtractJson(answer); ShowMindMap(session.MindMapJson); }
+                else if (operation == "mindmap") { session.MindMapJson = AiService.ExtractJson(answer); response.Content = "思维导图已生成，可在上方切换查看。"; if (current?.Id == session.Id) ShowMindMap(session.MindMapJson); }
                 store.SaveSession(session);
             }
-            Status("本地 AI 处理完成");
+            SetAiFeedback(AiOperationName(operation) + " · 已完成 ✓", 1);
+            response.Status = "已完成"; store.SaveSession(session);
         }
-        finally { if (gateHeld) AiService.GpuGate.Release(); aiBusy = false; aiCancellation.Dispose(); aiCancellation = null; UpdateEditState(); }
+        catch (OperationCanceledException) { response.Status = "已停止"; if (response.Content.Length == 0) response.Content = "本次生成已停止，已完成的内容已保留。"; store.SaveSession(session); SetAiFeedback(AiOperationName(operation) + " · 已停止，已完成内容保留"); }
+        catch (Exception ex) { response.Status = "生成失败"; response.Content = "生成未完成：" + ex.Message; store.SaveSession(session); SetAiFeedback(AiOperationName(operation) + " · 失败：" + ex.Message); }
+        finally { if (gateHeld) AiService.GpuGate.Release(); aiBusy = false; aiCancellation.Dispose(); aiCancellation = null; EndAiFeedback(); UpdateEditState(); }
     });
     private void ShowMindMap(string json)
     {
@@ -404,10 +428,10 @@ public sealed partial class MainWindow : Window
             if (depth < 8 && element.TryGetProperty("children", out var children)) foreach (var child in children.EnumerateArray().Take(150)) node.Children.Add(Node(child, depth + 1));
             return node;
         }
-        MindMapTree.RootNodes.Add(Node(document.RootElement, 0)); MindMapTree.Visibility = Visibility.Visible; AiOutput.Visibility = Visibility.Collapsed;
+        MindMapTree.RootNodes.Add(Node(document.RootElement, 0)); MindMapTree.Visibility = Visibility.Visible; ChatMessages.Visibility = Visibility.Collapsed; BackToChat.Visibility = Visibility.Visible;
     }
-    private void StopAi_Click(object sender, RoutedEventArgs e) => aiCancellation?.Cancel();
-    private void AiToggle_Click(object sender, RoutedEventArgs e) { var show = AiToggle.IsChecked == true; AiPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed; AiColumn.Width = new GridLength(show ? 310 : 0); }
+    private void StopAi_Click(object sender, RoutedEventArgs e) { if (aiCancellation is not null) { aiCancellation.Cancel(); AiActivityText.Text = "正在停止 AI · 已完成内容将保留…"; StopAiButton.IsEnabled = false; } }
+    private void AiToggle_Click(object sender, RoutedEventArgs e) { var show = AiToggle.IsChecked == true; AiPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed; AiColumn.Width = new GridLength(show ? 360 : 0); }
     private void Workspace_SizeChanged(object sender, SizeChangedEventArgs e) { if (e.NewSize.Width < 760 && AiToggle.IsChecked == true) { AiToggle.IsChecked = false; AiToggle_Click(this, new()); } }
     private async void Export_Click(object sender, RoutedEventArgs e) => await SafeAsync(async () =>
     {
@@ -486,17 +510,6 @@ public sealed partial class MainWindow : Window
     }
     private void Timeline_Pressed(object sender, PointerRoutedEventArgs e) { if (current is not null && Player.MediaPlayer is not null && TimelineCanvas.ActualWidth > 0) Player.MediaPlayer.PlaybackSession.Position = TimeSpan.FromSeconds(Math.Clamp(e.GetCurrentPoint(TimelineCanvas).Position.X / TimelineCanvas.ActualWidth, 0, 1) * current.Duration); }
     private void Floating_Click(object sender, RoutedEventArgs e) { if (floating is not null) { floating.Close(); floating = null; return; } floating = new FloatingSubtitleWindow(); floating.Closed += (_, _) => floating = null; floating.Activate(); }
-    private async void Record_Click(object sender, RoutedEventArgs e) => await SafeAsync(async () =>
-    {
-        if (recorder is not null)
-        {
-            var output = await recorder.StopAsync(); recorder.Dispose(); recorder = null; await ImportPathsAsync([output]); Status("录音已保存"); return;
-        }
-        var mode = new ComboBox { ItemsSource = new[] { "系统音频", "麦克风", "系统音频 + 麦克风" }, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
-        if (!await ConfirmAsync("开始录音", mode, "开始")) return;
-        var directory = Path.Combine(paths.DataRoot, "recordings"); Directory.CreateDirectory(directory);
-        recorder = new AudioRecorder(directory, mode.SelectedIndex, paths); recorder.Start(); Status("● 正在录音 · 再次点击左侧「录音」停止并保存");
-    });
     private async void Integration_Click(object sender, RoutedEventArgs e) => await SafeAsync(async () =>
     {
         RequireSubtitles(); var tag = (sender as FrameworkElement)?.Tag as string;
@@ -508,6 +521,9 @@ public sealed partial class MainWindow : Window
     });
     private void Window_Closed(object sender, WindowEventArgs args)
     {
+        windowClosed = closing = true; playbackTimer.Stop(); saveTimer.Stop(); noticeTimer.Stop(); recordingTimer.Stop(); current = null;
         Player.MediaPlayer?.Dispose();
+        // The media/overlay native windows can otherwise keep the dispatcher alive after the main window closes.
+        DispatcherQueue.TryEnqueue(() => Application.Current.Exit());
     }
 }

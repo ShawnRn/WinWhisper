@@ -76,15 +76,32 @@ public sealed class MediaTools(AppPaths paths)
         if (end <= start) throw new ArgumentException("片段结束时间必须大于开始时间。");
         Processes.EnsureSuccess(await Processes.RunAsync(Ffmpeg, ["-hide_banner", "-nostdin", "-y", "-ss", N(start), "-i", input, "-t", N(end - start), "-c:v", "libx264", "-preset", "fast", "-c:a", "aac", output], ct: ct), "片段导出");
     }
-    public async Task<string> DownloadAsync(string url, string workDirectory, CancellationToken ct, Action<string>? progress)
+    public async Task<string> DownloadAsync(string url, string workDirectory, CancellationToken ct, Action<string>? progress, OnlineDownloadOptions? options = null)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) throw new ArgumentException("请输入有效的 HTTP/HTTPS 媒体链接。");
         Directory.CreateDirectory(workDirectory);
-        var result = await Processes.RunAsync(paths.FindEngine("yt-dlp", "yt-dlp.exe"),
-            ["--no-playlist", "--no-overwrites", "--newline", "--ffmpeg-location", Path.GetDirectoryName(Ffmpeg)!, "--merge-output-format", "mp4", "--print", "after_move:filepath", "-o", Path.Combine(workDirectory, "%(title).150B.%(ext)s"), "--", url], onOutput: progress, ct: ct);
-        Processes.EnsureSuccess(result, "下载在线媒体");
-        return result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).LastOrDefault(File.Exists)
-            ?? throw new IOException("下载结束，但没有找到媒体文件。");
+        options ??= new();
+        if (options.Proxy.Length == 0)
+        {
+            var proxy = await Task.Run(() => HttpClient.DefaultProxy.GetProxy(uri), ct);
+            if (proxy is not null && proxy != uri) options = options with { Proxy = proxy.AbsoluteUri };
+        }
+        string? temporaryCookies = null;
+        try
+        {
+            if (options.CookieFile.Length > 0)
+            {
+                temporaryCookies = Path.Combine(workDirectory, Guid.NewGuid().ToString("N") + ".cookies.tmp");
+                File.Copy(options.CookieFile, temporaryCookies);
+            }
+            var args = OnlineDownloads.Arguments(url, workDirectory, Path.GetDirectoryName(Ffmpeg)!, paths.FindEngine("deno", "deno.exe"), options, temporaryCookies);
+            void Report(string line) { if (OnlineDownloads.ProgressMessage(line) is { } message) progress?.Invoke(message); }
+            var result = await Processes.RunAsync(paths.FindEngine("yt-dlp", "yt-dlp.exe"), args, onOutput: Report, onError: Report, ct: ct);
+            if (result.ExitCode != 0) throw new InvalidOperationException(OnlineDownloads.FailureMessage(result.Error));
+            return result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).LastOrDefault(File.Exists)
+                ?? throw new IOException("下载结束，但没有找到媒体文件。");
+        }
+        finally { if (temporaryCookies is not null && File.Exists(temporaryCookies)) File.Delete(temporaryCookies); }
     }
     public static string CacheKey(string media, string model, string options)
     {

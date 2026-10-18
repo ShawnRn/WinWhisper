@@ -117,7 +117,7 @@ public sealed partial class MainWindow
     private void SaveAppliedModel()
     {
         store.SaveSettings(settings);
-        AiProviderLabel.Text = (settings.ModelProvider == LanguageModelKind.Ollama ? "Ollama" : "内置 llama.cpp") + " · 内容仅在本机处理";
+        UpdateAiModelLabel();
         if (!aiBusy) { provider?.Dispose(); provider = null; }
         RefreshModelStoreStates(); Status("模型已应用，下一个任务会使用新模型。");
     }

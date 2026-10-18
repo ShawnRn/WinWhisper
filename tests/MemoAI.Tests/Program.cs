@@ -67,6 +67,46 @@ await Test("SQLite persistence, search, folders, jobs and settings survive resta
     Check(restart.GetSessions("Windows", "播客").Count == 1 && restart.GetSessions("Windows", "其他").Count == 0, "搜索或文件夹过滤错误");
     Check(restart.GetJobs().Single().State == JobState.Interrupted && restart.LoadSettings().Backend == ComputeBackend.Cuda, "任务或设置未持久化");
 }));
+await Test("Chinese typography preserves code, links and URLs", () => Sync(() =>
+{
+    var text = "他说“使用GPT6整理3条建议，阅读《三体》”。\n```cs\n中文Code3=1;\n```\n`中文Code3` https://example.com/中文Code3 [链接](https://example.com/中文Code3)";
+    var actual = ChineseTypography.Apply(text);
+    Check(actual.StartsWith("他说「使用 GPT6 整理 3 条建议，阅读《三体》」。"), "中文引号或中英数间距未规范");
+    Check(actual.Contains("```cs\n中文Code3=1;\n```") && actual.Contains("`中文Code3`") && actual.Contains("https://example.com/中文Code3"), "代码或网址被改写");
+    Check(ChineseTypography.Apply(actual) == actual, "格式规范化不是幂等操作");
+    Check(ChineseTypography.Apply("大家好,欢迎使用AI,共有1,000条记录。 English, sentence.") == "大家好，欢迎使用 AI，共有 1,000 条记录。 English, sentence.", "中文逗号或数字分隔符处理错误");
+    Check(ChineseTypography.Apply("过去**12个月**使用**AI**处理。") == "过去 **12 个月**使用 **AI** 处理。", "Markdown 强调两侧中英数字间距错误");
+    Check(ChineseTypography.Apply("It’s an English sentence, with “quotes”.") == "It’s an English sentence, with “quotes”.", "英文撇号或引号被改写");
+    Check(ChineseTypography.Apply("{\"title\":\"中文Code3,内容\"}") == "{\"title\":\"中文Code3,内容\"}", "有效 JSON 被破坏");
+}));
+await Test("Chat history persists and follow-up includes previous turns", async () =>
+{
+    var media = new MediaSession { Segments = [new() { Start = 0, End = 5, Text = "这个节目讨论本地 AI。" }], Chat = [new() { Role = "user", Content = "主要话题是什么？" }, new() { Role = "assistant", Content = "本地 AI。" }] };
+    var db = new Store(Path.Combine(run, "chat-history")); db.SaveSession(media);
+    var restored = db.GetSession(media.Id)!; var model = new FakeModel();
+    await new AiService(model, new()).AskAsync(restored, "它的优势是什么？", null, CancellationToken.None, restored.Chat.ToArray());
+    Check(model.LastPrompt.Contains("主要话题是什么") && model.LastPrompt.Contains("本地 AI") && model.LastSystem.Contains("直角引号"), "对话历史或默认中文规范未进入请求");
+});
+await Test("Per-media transcription settings persist and snapshot independently", () => Sync(() =>
+{
+    var defaults = new AppSettings { TranscriptionModelPath = "global.bin", Language = "auto" };
+    var media = new MediaSession { Transcription = new() { ModelPath = "session.bin", Language = "zh", Backend = ComputeBackend.Cuda, Threads = 4, BeamSize = 2, ChunkSeconds = 60, MaxLength = 35, Temperature = 0.1, Prompt = "专有名词" } };
+    var data = new Store(Path.Combine(run, "transcription-options")); data.SaveSession(media);
+    var options = data.GetSession(media.Id)!.Transcription!; var snapshot = options.ApplyTo(defaults);
+    options.ModelPath = "next.bin"; options.Language = "en";
+    Check(snapshot.TranscriptionModelPath == "session.bin" && snapshot.Language == "zh" && snapshot.TranscriptionChunkSeconds == 60 && snapshot.TranscriptionMaxLength == 35 && snapshot.TranscriptionBeamSize == 2 && snapshot.Glossary == "专有名词", "配置快照被后续编辑改变");
+    Check(defaults.Language == "auto" && defaults.TranscriptionModelPath == "global.bin", "媒体配置污染了全局默认值");
+    options.ChunkSeconds = 0; try { options.ApplyTo(defaults); throw new Exception("无效分块参数未拒绝"); } catch (ArgumentException) { }
+}));
+await Test("Online download browser selection is explicit and secrets are not logged", () => Sync(() =>
+{
+    var plain = OnlineDownloads.Arguments("https://www.youtube.com/watch?v=fixture", "output", "ffmpeg", "deno.exe", new());
+    Check(!plain.Contains("--cookies-from-browser") && plain.Contains("--no-cookies-from-browser") && plain.Contains("--ignore-config"), "默认读取了浏览器或外部配置");
+    var authenticated = OnlineDownloads.Arguments("https://www.youtube.com/watch?v=fixture", "output", "ffmpeg", "deno.exe", new("edge", "Profile 1", Proxy: "http://127.0.0.1:7897", Quality: 3));
+    Check(authenticated.Contains("edge:Profile 1") && authenticated.Contains("ba/b") && authenticated[^2] == "--", "浏览器资料或参数边界错误");
+    Check(OnlineDownloads.ProgressMessage("Cookie: secret-value") == "正在读取选定的登录状态…" && !OnlineDownloads.FailureMessage("DPAPI secret-value").Contains("secret-value"), "登录信息泄漏到显示消息");
+    try { OnlineDownloads.Arguments("https://example.com", "output", "ffmpeg", "deno.exe", new("unsupported")); throw new Exception("未知浏览器未拒绝"); } catch (ArgumentException) { }
+}));
 await Test("Long transcript chunks preserve all cues within context budget", () => Sync(() =>
 {
     var cues = Enumerable.Range(0, 10000).Select(i => new SubtitleSegment { Start = i, End = i + 0.9, Text = "中文 English segment " + i }).ToArray();
@@ -239,6 +279,30 @@ if (gguf is not null)
         await File.WriteAllTextAsync(Path.Combine(run, "built-in.txt"), answer);
     });
 }
+if (args.Contains("--online"))
+{
+    await Test("Bundled YouTube download to per-media CUDA transcription pipeline", async () =>
+    {
+        var paths = new AppPaths(Path.Combine(run, "online-data"), Path.Combine(root, "engines"));
+        var sample = new MediaSession { Title = "Online pipeline fixture", Transcription = new() { ModelPath = Path.Combine(root, "artifacts", "test-assets", "ggml-tiny.en.bin"), Language = "en", Backend = ComputeBackend.Cuda, EnableVad = false, Threads = 2, BeamSize = 1, ChunkSeconds = 60, MaxLength = 28, Temperature = 0.1, Prompt = "zoo, elephants" } };
+        sample.MediaPath = await new MediaTools(paths).DownloadAsync("https://www.youtube.com/watch?v=jNQXAC9IVRw", paths.SessionDirectory(sample.Id), CancellationToken.None, null, new(Quality: 3));
+        sample.Duration = await new MediaTools(paths).ProbeAsync(sample.MediaPath, CancellationToken.None);
+        var db = new Store(paths.DataRoot); db.SaveSession(sample);
+        var finished = new TaskCompletionSource<JobRecord>(TaskCreationOptions.RunContinuationsAsynchronously); var received = new List<SubtitleSegment>();
+        await using var scheduler = new JobScheduler(paths, db, () => new() { TranscriptionModelPath = "missing-global-model.bin" }, (j, e) =>
+        {
+            if (e?.Segments is { } cues) received = cues.ToList();
+            if (j.State is JobState.Completed or JobState.Failed) finished.TrySetResult(j);
+            return Task.CompletedTask;
+        });
+        var job = await scheduler.EnqueueAsync(sample, "transcribe");
+        sample.Transcription.ModelPath = "next-task-only.bin";
+        var result = await finished.Task.WaitAsync(TimeSpan.FromSeconds(120));
+        Check(result.State == JobState.Completed, result.Message);
+        Check(job.Request!.Settings.TranscriptionModelPath.EndsWith("ggml-tiny.en.bin") && received.Count > 1 && received.Any(s => s.Text.Contains("elephant", StringComparison.OrdinalIgnoreCase)), "在线导入或任务独立参数没有传递给真实引擎");
+        await File.WriteAllTextAsync(Path.Combine(run, "online-result.json"), Json.Write(new { backend = result.Backend, result.ElapsedSeconds, sample.Duration, segments = received }));
+    });
+}
 if (args.Contains("--benchmark"))
 {
     var paths = new AppPaths(Path.Combine(run, "benchmark-data"), Path.Combine(root, "engines"));
@@ -269,8 +333,9 @@ Environment.ExitCode = failures == 0 ? 0 : 1;
 sealed class FakeModel : ILocalLanguageModelProvider
 {
     public int Calls;
+    public string LastPrompt = "", LastSystem = "";
     public Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<string>>(["test"]);
-    public Task<string> GenerateAsync(string model, string system, string prompt, Func<string, Task>? onDelta, CancellationToken ct) { ct.ThrowIfCancellationRequested(); Calls++; return Task.FromResult("译文"); }
+    public Task<string> GenerateAsync(string model, string system, string prompt, Func<string, Task>? onDelta, CancellationToken ct) { ct.ThrowIfCancellationRequested(); Calls++; LastPrompt = prompt; LastSystem = system; return Task.FromResult("译文"); }
 }
 
 sealed class DownloadHandler(byte[] data) : HttpMessageHandler

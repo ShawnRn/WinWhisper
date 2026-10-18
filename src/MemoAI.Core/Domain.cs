@@ -46,11 +46,21 @@ public partial class MediaSession : ObservableObject
     public string MindMapJson { get; set; } = "";
     public string Chapters { get; set; } = "";
     public double Duration { get; set; }
+    public TranscriptionOptions? Transcription { get; set; }
+    public ObservableCollection<ChatTurn> Chat { get; set; } = [];
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.Now;
     public ObservableCollection<SubtitleSegment> Segments { get; set; } = [];
     [JsonIgnore] public string Description => $"{CreatedAt:MM-dd HH:mm}  ·  {Segments.Count} 条字幕  ·  {Folder}";
     [JsonIgnore] public string DurationLabel => Duration > 0 ? TimeSpan.FromSeconds(Duration).ToString(@"hh\:mm\:ss") : "音视频 / 字幕";
+}
+
+public partial class ChatTurn : ObservableObject
+{
+    public string Role { get; set; } = "assistant";
+    [ObservableProperty] private string content = "";
+    [ObservableProperty] private string status = "";
+    public string Label => Role == "user" ? "你" : "MemoAI";
 }
 
 public sealed class AppSettings
@@ -71,6 +81,11 @@ public sealed class AppSettings
     public bool EnableVad { get; set; } = true;
     public string VadModelPath { get; set; } = "";
     public string Glossary { get; set; } = "";
+    public int TranscriptionThreads { get; set; }
+    public int TranscriptionBeamSize { get; set; } = 5;
+    public int TranscriptionChunkSeconds { get; set; } = 300;
+    public int TranscriptionMaxLength { get; set; }
+    public double TranscriptionTemperature { get; set; }
     public string SummaryPrompt { get; set; } = "用中文总结以下内容，包含主题概述、关键观点、事实与结论。保留人名、产品名、数字；不要编造原文不存在的信息。";
     public string ObsidianFolder { get; set; } = "";
     public string NotionParentPage { get; set; } = "";
@@ -82,6 +97,36 @@ public sealed class AppSettings
     public int TtsVoice { get; set; } = 50;
     public string SpeakerSegmentationModel { get; set; } = "";
     public string SpeakerEmbeddingModel { get; set; } = "";
+}
+
+public sealed class TranscriptionOptions
+{
+    public string ModelPath { get; set; } = "";
+    public string Language { get; set; } = "auto";
+    public ComputeBackend Backend { get; set; }
+    public bool EnableVad { get; set; } = true;
+    public int Threads { get; set; }
+    public int BeamSize { get; set; } = 5;
+    public int ChunkSeconds { get; set; } = 300;
+    public int MaxLength { get; set; }
+    public double Temperature { get; set; }
+    public string Prompt { get; set; } = "";
+    public static TranscriptionOptions FromSettings(AppSettings s) => new()
+    {
+        ModelPath = s.TranscriptionModelPath, Language = s.Language, Backend = s.Backend, EnableVad = s.EnableVad,
+        Threads = s.TranscriptionThreads, BeamSize = s.TranscriptionBeamSize, ChunkSeconds = s.TranscriptionChunkSeconds,
+        MaxLength = s.TranscriptionMaxLength, Temperature = s.TranscriptionTemperature, Prompt = s.Glossary
+    };
+    public AppSettings ApplyTo(AppSettings defaults)
+    {
+        if (Threads is < 0 or > 64 || BeamSize is < 1 or > 10 || ChunkSeconds is < 30 or > 900 || MaxLength is < 0 or > 200 || !double.IsFinite(Temperature) || Temperature is < 0 or > 1)
+            throw new ArgumentException("转写参数超出允许范围。");
+        var s = Json.Read<AppSettings>(Json.Write(defaults));
+        s.TranscriptionModelPath = ModelPath; s.Language = Language; s.Backend = Backend; s.EnableVad = EnableVad;
+        s.TranscriptionThreads = Threads; s.TranscriptionBeamSize = BeamSize; s.TranscriptionChunkSeconds = ChunkSeconds;
+        s.TranscriptionMaxLength = MaxLength; s.TranscriptionTemperature = Temperature; s.Glossary = Prompt;
+        return s;
+    }
 }
 
 public sealed record JobRequest(string Id, string SessionId, string Operation, string MediaPath,
@@ -105,6 +150,8 @@ public sealed class JobRecord
     public string Device { get; set; } = "";
     public double? ElapsedSeconds { get; set; }
     public double? RealTimeFactor { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
+    public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.Now;
     public JobRequest? Request { get; set; }
     [JsonIgnore] public string Display => $"{Title} · {State switch { JobState.Queued => "等待中", JobState.Running => "处理中", JobState.Completed => "已完成", JobState.Cancelled => "已取消", JobState.Failed => "失败", _ => "已中断" }} · {Progress:P0}  {Message}";
