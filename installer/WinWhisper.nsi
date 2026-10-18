@@ -15,10 +15,9 @@ InstallDir "$LOCALAPPDATA\Programs\WinWhisper"
 RequestExecutionLevel user
 ManifestDPIAware true
 ManifestLongPathAware true
-# Compress files individually: a combined ARM64/x64 GPU payload exceeds the
-# 32-bit compiler's uncompressed solid-block address space.
-SetCompressor lzma
-SetCompressorDictSize 32
+# Payloads are precompressed by the native encoder. The 32-bit bootstrapper
+# only compresses its small script/helper, avoiding large solid-block limits.
+SetCompressor zlib
 SetDatablockOptimize on
 ShowInstDetails show
 ShowUninstDetails show
@@ -238,24 +237,48 @@ FunctionEnd
 !insertmacro TargetLockCheck ""
 !insertmacro TargetLockCheck "un."
 
+!macro ExtractPayload Rid
+  InitPluginsDir
+  SetOutPath "$PLUGINSDIR"
+  File /oname=7zr.exe "${ROOT}\.tools\7zip-26.04\7zr.exe"
+  SetCompress off
+  File /oname=payload.7z "${PAYLOADS}\${Rid}.7z"
+  SetCompress auto
+  DetailPrint "正在解压应用文件 / Extracting application files..."
+  nsExec::ExecToLog '"$PLUGINSDIR\7zr.exe" x -y -aoa -bsp0 "-o$INSTDIR" "$PLUGINSDIR\payload.7z"'
+  Pop $0
+  ${If} $0 != "0"
+    SetErrorLevel 4
+    Abort "应用文件解压失败，请检查可用空间和目录权限。/ Extraction failed; check disk space and directory permissions."
+  ${EndIf}
+  SetOutPath "$INSTDIR"
+  File /oname=CREDITS.md "${ROOT}\CREDITS.md"
+  SetOutPath "$INSTDIR\licenses"
+  File /r "${ROOT}\distribution\licenses\*"
+  SetOutPath "$INSTDIR\docs"
+  File /oname=THIRD-PARTY-SOURCES.md "${ROOT}\docs\THIRD-PARTY-SOURCES.md"
+  SetOutPath "$INSTDIR"
+!macroend
+
 Section "WinWhisper（必需 / required）" MainSection
   SectionIn RO
+  AddSize 3145728 ; conservative application + temporary extraction allowance
   Call CheckTargetClosed
   SetOutPath "$INSTDIR"
   ClearErrors
 !if "${ARCH}" == "Universal"
   ${If} ${IsNativeARM64}
-    File /r "${STAGE}\win-arm64\*"
+    !insertmacro ExtractPayload "win-arm64"
     WriteINIStr "$INSTDIR\install-scope.ini" "Install" "Architecture" "win-arm64"
   ${Else}
-    File /r "${STAGE}\win-x64\*"
+    !insertmacro ExtractPayload "win-x64"
     WriteINIStr "$INSTDIR\install-scope.ini" "Install" "Architecture" "win-x64"
   ${EndIf}
 !else if "${ARCH}" == "arm64"
-  File /r "${STAGE}\win-arm64\*"
+  !insertmacro ExtractPayload "win-arm64"
   WriteINIStr "$INSTDIR\install-scope.ini" "Install" "Architecture" "win-arm64"
 !else
-  File /r "${STAGE}\win-x64\*"
+  !insertmacro ExtractPayload "win-x64"
   WriteINIStr "$INSTDIR\install-scope.ini" "Install" "Architecture" "win-x64"
 !endif
   ${If} ${Errors}

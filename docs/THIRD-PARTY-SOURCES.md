@@ -7,6 +7,7 @@
 - sherpa-onnx v1.13.8（`11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf`）及本次 DirectML 构建实际使用的静态依赖源码，包括 eSpeak NG、piper-phonemize、Kaldi、OpenFst 等。包含 DirectML 导入与 profiling 文件名补丁后的源码；补丁在 `scripts/build-sherpa-directml.ps1` 中可复现。
 - 本次 FFmpeg ARM64 与 x64 二进制对应的 FFmpeg 源码（`e9b3c55fe0321915a70f44f30b276ef2afdc3a0c`、`94cba3150c6b83057ed48b833689adc806715cc0`），以及相应上游构建脚本和补丁。外部编解码库的获取及配置见这些脚本、FFmpeg 包内 readme/configuration；保留它们各自的许可。
 - 固定下载地址、SHA-256 清单和本项目的 DirectML 构建脚本。应用及 Worker 源码可通过同一版本的 GitHub 源码包获取。
+- 7-Zip 26.04 完整源码；安装程序临时使用同版本 7zr 解压经过校验的负载，相关 LGPL / BSD 声明保留在安装目录。
 
 自编译语音运行时包含 GPL-3.0 的 eSpeak NG，须连同其 GPL 许可和对应源码获取信息保留；FFmpeg 使用上游 GPL 构建。它们与本地应用通过独立 Worker / CLI 接口交互。模型权重不包含在源码或安装程序中，模型下载由用户在商店发起并保留原始包内说明。
 

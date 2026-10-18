@@ -20,6 +20,7 @@ WinWhisper 的应用代码采用 [MIT](LICENSE)。以下项目、字体、SDK、
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | 用户触发的在线媒体导入与浏览器 Cookie 参数 | 源码 Unlicense；官方打包可执行文件及其依赖保留上游完整声明 |
 | [Deno](https://github.com/denoland/deno) | yt-dlp 所需 JavaScript 运行时 | MIT 及其第三方许可 |
 | [NSIS](https://nsis.sourceforge.io/) | Unicode 安装与卸载程序，支持账户范围和可选快捷方式 | 保留 NSIS 包内 COPYING 中的各组件许可；便携编译器不要求全局安装 |
+| [7-Zip](https://www.7-zip.org/) | 原生工具预压缩安装负载；安装时临时使用固定版本的 7zr 解压 | GNU LGPL / BSD 等上游条款，保留许可及同版源码包；未全局安装压缩工具 |
 
 ## 本地 AI
 

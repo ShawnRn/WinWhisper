@@ -11,6 +11,7 @@ $downloads=@(
     @{file='ffmpeg-x64-94cba31.tar.gz';url='https://github.com/FFmpeg/FFmpeg/archive/94cba3150c6b83057ed48b833689adc806715cc0.tar.gz';sha='8d4d5864279641a4a50ad9fe572fef5f3e96d735f575f49f7125a16273de7fe7'},
     @{file='ffmpeg-arm64-recipes-a6db219.tar.gz';url='https://github.com/tordona/ffmpeg-win-arm64/archive/a6db219ea76a2d9461b7f79706e575e22ccf0d6c.tar.gz';sha='10aeae4cc9677e19dd0e6f89d0cd07f988606c7df19955bda95851255c2613e4'},
     @{file='ffmpeg-x64-recipes-63ac326.tar.gz';url='https://github.com/BtbN/FFmpeg-Builds/archive/63ac3265b0789ea16c7b1f8351cd2ad195a28722.tar.gz';sha='4fd8856d5b207fce5c870a690aefc9a72b9a1943cfc79df8d5d327ec4612c9d2'}
+    @{file='7z2604-src.tar.xz';url='https://github.com/ip7z/7zip/releases/download/26.04/7z2604-src.tar.xz';sha='9691944c0fe0d01bb49373a704fb983fd33bc98b1738695179dfbf99ac1734f6'}
 )
 foreach($item in $downloads){
     $out=Join-Path $sourceRoot $item.file

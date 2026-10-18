@@ -24,6 +24,10 @@
 
 `package.ps1` 每次创建新的 stage，校验本机 PE 和受控 x64 Worker，拒绝模型权重和凭据文件。安装器使用 NSIS 3.13，便携 ZIP 的哈希由 bootstrap 校验。范围页选择所有用户时交给 Windows 提权；不安装系统服务，不全局修改 PATH。
 
+负载先用原生架构的 7-Zip 26.04 编码，再由固定版本的 7zr 完整校验并由安装程序临时解压。NSIS 仅封装已经压缩的负载，避免 32 位编译器处理巨大原始 solid 块时的地址空间限制。Universal 包含两套离线负载，自动选取系统架构；总负载须小于脚本规定的安全上限，为单文件格式保留空间。安装过程需要为临时解压及应用文件预留数 GB 空间。
+
+高级复用可传入 `-ExistingStage <verified-stage> -ExistingPayloads <verified-payload-directory>`，只允许复用同一构建的配套负载。`7zr t` 完整校验后才封装；公共许可及致谢在解压后从当前仓库补齐。首次预览的预压缩使用 NanaZip 7.0 / 2609.2 ARM64 编码，7zr 26.04 校验，发布记录应保留此工具差异；默认脚本使用固定官方编码器。
+
 测试使用独立卸载注册项、快捷方式名和目录标记，覆盖安装、升级、启动及卸载。卸载采用编译时生成的应用文件清单，不递归清除整个目录，也不删除 `%LOCALAPPDATA%/MemoAI.Native`。安装前检查目标应用是否仍在运行。
 
 GitHub 先创建 draft prerelease、上传三种安装程序、`SHA256SUMS.txt` 和源码/许可资料，再手动运行 `.github/workflows/installer-qa.yml`。该工作流在 Windows x64 runner 上验证当前用户和所有用户安装，后者使用 runner 既有权限，测试脚本不会批准 UAC。`native_ui` 只有具备可用桌面时启用；关闭该项时不能声称完成 GUI 验证。通过后才撤销 draft 并保留 prerelease 标记，最后核对资产清单和下载地址。

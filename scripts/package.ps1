@@ -2,7 +2,8 @@ param(
     [ValidateSet('Universal','x64','arm64','All')][string]$Architecture='All',
     [string]$Version='0.1.0-preview.1',
     [string]$AppOutputRoot='artifacts/ui-v2',
-    [string]$ExistingStage=''
+    [string]$ExistingStage='',
+    [string]$ExistingPayloads=''
 )
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
@@ -121,6 +122,22 @@ foreach($rid in 'win-arm64','win-x64'){
     }
     Assert-Architecture $payload $rid
 }
+$extractor=Join-Path $root '.tools/7zip-26.04/7zr.exe'
+if(!(Test-Path $extractor) -or (Get-FileHash $extractor).Hash.ToLowerInvariant() -ne '256feca8e274e5da655e2a284fabafd9f554365eb164862089dacd4e8276d282'){throw 'Run bootstrap-packaging.ps1 for the pinned extractor'}
+$payloads=if($ExistingPayloads){(Resolve-Path -LiteralPath $ExistingPayloads).Path}else{Join-Path $stage 'payloads'}
+if(!$ExistingPayloads){
+    New-Item -ItemType Directory -Path $payloads -Force | Out-Null
+    $encoder=if([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64'){Join-Path $root '.tools/7zip-26.04/arm64/7z.exe'}else{Join-Path $root '.tools/7zip-26.04/extra/x64/7za.exe'}
+    foreach($rid in 'win-arm64','win-x64'){
+        & $encoder a -t7z -mx=5 -mmt=8 -ms=128m -bsp0 -bso0 (Join-Path $payloads "$rid.7z") (Join-Path $stage "$rid/*")
+        if($LASTEXITCODE){throw "Payload compression failed: $rid"}
+    }
+}
+foreach($rid in 'win-arm64','win-x64'){
+    & $extractor t (Join-Path $payloads "$rid.7z") -bsp0 -bso0
+    if($LASTEXITCODE){throw "Payload integrity check failed: $rid"}
+}
+if((Get-ChildItem -LiteralPath $payloads -Filter '*.7z' -File | Measure-Object Length -Sum).Sum -gt 2100000000){throw 'Combined payload exceeds the single-file NSIS limit'}
 $variants=if($Architecture -eq 'All'){@('Universal','x64','arm64')}else{@($Architecture)}
 foreach($variant in $variants){
     $rids=if($variant -eq 'Universal'){@('win-arm64','win-x64')}elseif($variant -eq 'arm64'){@('win-arm64')}else{@('win-x64')}
@@ -135,7 +152,7 @@ foreach($variant in $variants){
     $lines+=@($directories.Keys | Sort-Object Length -Descending | ForEach-Object {'RMDir "$INSTDIR\'+$_.Replace('$','$$')+'"'})
     [IO.File]::WriteAllLines((Join-Path $stage "uninstall-$variant.nsh"),$lines,[Text.UTF8Encoding]::new($false))
     $output=Join-Path $release "WinWhisper-$Version-$variant-Setup.exe"
-    & $compiler /V3 /INPUTCHARSET UTF8 "/DVERSION=$Version" "/DARCH=$variant" "/DROOT=$root" "/DSTAGE=$stage" "/DOUTPUT=$output" (Join-Path $root 'installer/WinWhisper.nsi')
+    & $compiler /V3 /INPUTCHARSET UTF8 "/DVERSION=$Version" "/DARCH=$variant" "/DROOT=$root" "/DSTAGE=$stage" "/DPAYLOADS=$payloads" "/DOUTPUT=$output" (Join-Path $root 'installer/WinWhisper.nsi')
     if($LASTEXITCODE){throw "Installer compilation failed: $variant"}
     Write-Host "Installer: $output"
 }
