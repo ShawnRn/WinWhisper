@@ -1,0 +1,58 @@
+name: Installer QA
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Draft release tag to validate
+        required: true
+        default: v0.1.0-preview.1
+      asset:
+        description: x64 or Universal installer asset name
+        required: true
+        default: WinWhisper-0.1.0-preview.1-x64-Setup.exe
+      native_ui:
+        description: Also run the installed WinUI self-test (requires a usable desktop)
+        type: boolean
+        default: false
+permissions:
+  contents: write # Allows reading the owner's draft release; this workflow never publishes it.
+jobs:
+  windows-install:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download owned draft assets and verify SHA-256
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          INSTALLER_ASSET: ${{ inputs.asset }}
+        run: |
+          if ($env:INSTALLER_ASSET -notmatch '^WinWhisper-[A-Za-z0-9.-]+-(x64|Universal)-Setup\.exe$') { throw 'Unexpected installer name' }
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$') { throw 'Unexpected release tag' }
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern $env:INSTALLER_ASSET --pattern SHA256SUMS.txt --dir downloaded
+          if ($LASTEXITCODE) { throw 'Draft download failed' }
+          $file = Join-Path downloaded $env:INSTALLER_ASSET
+          $line = Get-Content downloaded/SHA256SUMS.txt | Where-Object { $_.EndsWith('  ' + $env:INSTALLER_ASSET) }
+          if (!$line -or (Get-FileHash -LiteralPath $file).Hash.ToLowerInvariant() -ne $line.Split(' ')[0]) { throw 'Installer SHA-256 mismatch' }
+      - name: Current-user installation, upgrade and uninstall
+        shell: pwsh
+        env:
+          INSTALLER_ASSET: ${{ inputs.asset }}
+          NATIVE_UI: ${{ inputs.native_ui }}
+        run: |
+          ./scripts/test-installer.ps1 -Installer (Join-Path downloaded $env:INSTALLER_ASSET) -Scope CurrentUser -WorkRoot "$env:RUNNER_TEMP/WinWhisperQA" -SkipAppLaunch:($env:NATIVE_UI -ne 'true')
+      - name: All-users installation, upgrade and uninstall
+        shell: pwsh
+        env:
+          INSTALLER_ASSET: ${{ inputs.asset }}
+        run: |
+          ./scripts/test-installer.ps1 -Installer (Join-Path downloaded $env:INSTALLER_ASSET) -Scope AllUsers -WorkRoot "$env:RUNNER_TEMP/WinWhisperQA" -SkipAppLaunch
+      - name: Upload installer reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installer-qa-${{ github.run_id }}
+          path: ${{ runner.temp }}/WinWhisperQA/**/installer-test-results.json
+          if-no-files-found: warn

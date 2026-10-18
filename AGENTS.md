@@ -59,4 +59,7 @@ Read [workflows/README.md](workflows/README.md) for the development, native UI, 
 - Treat SDK-derived generated templates as local build inputs under the SDK terms; do not publish them as original MIT source. Keep their generation reproducible and retain the SDK notices for distribution.
 - Use the user-provided SVG as the formal icon source. Commit intentional brand assets, not temporary previews or build products; regenerate platform icons with `scripts/generate-icons.mjs`.
 - Before publishing, inspect tracked files and history for credentials, personal paths/data, model weights and binaries. Do not add ignored artifact or engine directories to make a build appear complete.
+- Package with the pinned portable NSIS compiler and `scripts/package.ps1`; keep Universal, x64 and ARM64 installers. Current-user installation is the default, all-users installation requires Windows elevation, and the optional desktop shortcut is unchecked.
+- Use `scripts/test-installer.ps1` in an isolated, ownership-marked directory. Verify the installed native app, architecture selection, upgrade, shortcuts, registration cleanup and preservation of unrelated files/data. Never approve UAC or security dialogs through automation; use an already elevated CI environment for all-users QA.
+- Publish third-party notices, source access/build recipes and SHA-256 checksums alongside the installers. Keep release notes explicit about unsigned installers, compatibility testing and known model/backend failures. Only publish the prerelease after its packaged assets pass the required checks.
 

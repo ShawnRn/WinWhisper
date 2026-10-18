@@ -18,6 +18,7 @@ WinWhisper 的应用代码采用 [MIT](LICENSE)。以下项目、字体、SDK、
 | [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds) / [tordona/ffmpeg-win-arm64](https://github.com/tordona/ffmpeg-win-arm64) | x64 / ARM64 FFmpeg 构建来源 | 分发时须保留对应构建的许可及源码获取信息 |
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | 用户触发的在线媒体导入与浏览器 Cookie 参数 | 源码 Unlicense；官方打包可执行文件及其依赖保留上游完整声明 |
 | [Deno](https://github.com/denoland/deno) | yt-dlp 所需 JavaScript 运行时 | MIT 及其第三方许可 |
+| [NSIS](https://nsis.sourceforge.io/) | Unicode 安装与卸载程序，支持账户范围和可选快捷方式 | 保留 NSIS 包内 COPYING 中的各组件许可；便携编译器不要求全局安装 |
 
 ## 本地 AI
 
@@ -31,7 +32,6 @@ WinWhisper 的应用代码采用 [MIT](LICENSE)。以下项目、字体、SDK、
 | [ONNX Runtime](https://github.com/microsoft/onnxruntime) / [DirectML](https://github.com/microsoft/DirectML) | ONNX GPU 算子执行；按架构构建 sherpa-onnx 与 DirectML 互操作 | ONNX Runtime 为 MIT；DirectML 遵循 Microsoft.AI.DirectML 包内 LICENSE，分发保留两者声明 |
 | [NVIDIA CUDA](https://docs.nvidia.com/cuda/eula/index.html) / [cuDNN](https://docs.nvidia.com/deeplearning/cudnn/backend/latest/reference/eula.html) | 可选 CUDA 13 / cuDNN 9 GPU 运行时，由用户在商店主动下载 | NVIDIA 各组件许可；不属于应用 MIT，保留原始包内的许可与上游链接 |
 | [eSpeak NG](https://github.com/espeak-ng/espeak-ng) / [piper-phonemize](https://github.com/rhasspy/piper-phonemize) | sherpa 的 TTS 构建包含的音素处理组件 | eSpeak NG 为 GPL-3.0，piper-phonemize 为 MIT；保留所用源码与各项 COPYING / LICENSE |
-| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | ONNX 语音模型运行 | MIT |
 | [Silero VAD](https://github.com/snakers4/silero-vad) | 语音活动检测 | MIT |
 | [Qwen](https://huggingface.co/Qwen) / [IndexTeam](https://huggingface.co/IndexTeam) | 按需选择的本地翻译、总结模型来源 | 以每个模型的 model card 为准 |
 | [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) / [3D-Speaker](https://github.com/modelscope/3D-Speaker) / [pyannote](https://github.com/pyannote/pyannote-audio) | 按需配音、声纹与分段模型来源 | 代码与模型分别按上游条款使用 |
@@ -54,3 +54,5 @@ CUDA 及 NVIDIA 运行时保留 NVIDIA 的分发条款。模型不随源码仓�
 - WinWhisper 图标：用户提供的 `Whisper-Transcribe-Metro.svg`，在此基础上调整细节并生成平台图标；不来自上述参考应用。
 
 若新增第三方代码、模型或分发文件，应同时更新此清单及对应许可文本。
+
+发布安装程序保留 `licenses/`、各引擎目录和 SDK 资源中的原始声明。第三方源码包、确切提交和构建补丁的获取方式见 [第三方源码](docs/THIRD-PARTY-SOURCES.md)。补充许可文本的来源与 SHA-256 记录在 `distribution/licenses/sources.json`。

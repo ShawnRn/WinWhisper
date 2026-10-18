@@ -1,0 +1,62 @@
+[
+  {
+    "file": "whisper.cpp-MIT.txt",
+    "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+    "source": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/b5454/LICENSE"
+  },
+  {
+    "file": "llama.cpp-MIT.txt",
+    "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+    "source": "https://raw.githubusercontent.com/ggml-org/llama.cpp/b11716/LICENSE"
+  },
+  {
+    "file": "Deno-MIT.md",
+    "sha256": "f62497fffecc0852960c8d3e6934b9db86d16396e9b604072e923892cae3a588",
+    "source": "https://raw.githubusercontent.com/denoland/deno/v2.9.7/LICENSE.md"
+  },
+  {
+    "file": "dotnet-runtime-LICENSE.txt",
+    "sha256": "cfc21f5e8bd655ae997eec916138b707b1d290b83272c02a95c9f821b8c87310",
+    "source": "https://raw.githubusercontent.com/dotnet/runtime/v10.0.13/LICENSE.TXT"
+  },
+  {
+    "file": "dotnet-runtime-THIRD-PARTY.txt",
+    "sha256": "66f1d4e44973185519bb4aa8a9718eb22fc7af2cc532e3ae9cfc4c127ee7fc54",
+    "source": "https://raw.githubusercontent.com/dotnet/runtime/v10.0.13/THIRD-PARTY-NOTICES.TXT"
+  },
+  {
+    "file": "NVIDIA-CUDA-EULA.html",
+    "sha256": "f676e53acbf3f714e69e64b7e4cc6fe8b4698b7c8c4ef9577542beb7ae68ca41",
+    "source": "https://docs.nvidia.com/cuda/eula/index.html"
+  },
+  {
+    "file": "NVIDIA-CUDA-12.4-EULA.html",
+    "sha256": "182734e0cee7c6217b911ef88fc92c4a1f487d1003c24dd9dab1597a399fb7c5",
+    "source": "https://docs.nvidia.com/cuda/archive/12.4.0/eula/index.html"
+  },
+  {
+    "file": "NSIS-COPYING.txt",
+    "sha256": "388357c1215ff403c5ebde3a5ecd273e68f8b79a579996775245d1ee65442aba",
+    "source": "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip"
+  },
+  {
+    "file": "Markdig-BSD.txt",
+    "source": "https://raw.githubusercontent.com/xoofx/markdig/ccb9d8593f7a0aac232342a6705e8afc8c4f374d/license.txt",
+    "sha256": "7423242b4ae72bccdf19a06cd3c20790df8519a164a08f37b31cb4a40034d827"
+  },
+  {
+    "file": "NAudio-MIT.txt",
+    "source": "https://raw.githubusercontent.com/naudio/NAudio/v2.2.1/license.txt",
+    "sha256": "303e01786b271eb464b3f43d18a375f2f17d37bc708a37c2fdf45b289fb5bfaa"
+  },
+  {
+    "file": "CommunityToolkit-MIT.md",
+    "source": "https://raw.githubusercontent.com/CommunityToolkit/dotnet/35dfe7b12da0e64384bfaec7ebc0883196a89f9f/License.md",
+    "sha256": "1e1101b893f295b4526da2c167e4234610f1078e2fe43a0e814c1a883656877b"
+  },
+  {
+    "file": "Win2D-MIT.txt",
+    "source": "https://raw.githubusercontent.com/microsoft/Win2D/25680382dd2136779e10ea6084f0c5ba437ae288/LICENSE.txt",
+    "sha256": "c3ba493105fa52657c4c60d9b1680da7c01b188a8665d7a823c2a187fd259808"
+  }
+]
