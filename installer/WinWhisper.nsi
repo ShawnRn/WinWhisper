@@ -15,7 +15,9 @@ InstallDir "$LOCALAPPDATA\Programs\WinWhisper"
 RequestExecutionLevel user
 ManifestDPIAware true
 ManifestLongPathAware true
-SetCompressor /SOLID lzma
+# Compress files individually: a combined ARM64/x64 GPU payload exceeds the
+# 32-bit compiler's uncompressed solid-block address space.
+SetCompressor lzma
 SetCompressorDictSize 32
 SetDatablockOptimize on
 ShowInstDetails show
