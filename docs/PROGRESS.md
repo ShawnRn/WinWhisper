@@ -11,6 +11,7 @@
 - 初始窗口依据工作区尺寸居中与限高，避免小工作区底部导航超出屏幕。版本进入 `0.1.0-preview.1`，关于信息显示完整预发布版本。
 - 最终 GPU 正向矩阵 **40/40**：`artifacts/tests/20261018-152317`，包含九组转写 GPU 组合、实时输入和取消、CUDA 配音与说话人。核心与真实媒体集成 **32/32**：`artifacts/tests/20261018-152215`。x64 兼容环境 **29/29**：`artifacts/tests/20261018-152740`，含 Parakeet / SenseVoice FP32 DirectML；Qwen3-ASR DirectML 和说话人补充 **29/29**：`artifacts/tests/20261018-151954`。x64 不是物理 x64 设备验收。
 - 最终预发布双架构构建均为 0 警告、0 错误。原生 ARM64 `artifacts/ui-tests/win-arm64/20261018-154012-bf49ad2e` 与 x64 `artifacts/ui-tests/win-x64/20261018-154030-d1634822` 通过，包含设置无重复下载控件、窗口适应工作区和真实视频关闭。关闭设置时先收起内部下拉框，检查等待原生动画结束；修复 x64 兼容执行下固定延时检查不稳定的问题。安装包验收仍在继续。
+- 加入 app-local VC++ 运行库后的打包目录，ARM64 `artifacts/ui-tests/win-arm64/20261018-155342-af7f6e36`、x64 `artifacts/ui-tests/win-x64/20261018-155359-aa0d5798` 均通过真实视频回归，包内 FFmpeg / Whisper / Deno 启动成功。使用打包 Worker 和运行库补测 CUDA Parakeet v3、DirectML SenseVoice FP32，**29/29**：`artifacts/tests/20261018-155738`，包含真实算子证据与检查点恢复。该补测的模型和 Provider 二进制仍来自开发目录中已锁定的同一版本，不冒充安装后完整模型下载测试。
 
 ## 2026-10-18：字幕处理、全文问答与原生交互修复
 
