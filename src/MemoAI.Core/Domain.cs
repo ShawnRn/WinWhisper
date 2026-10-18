@@ -79,7 +79,7 @@ public sealed class AppSettings
     public string TtsTokensPath { get; set; } = "";
     public string TtsDataDirectory { get; set; } = "";
     public string TtsLexiconPath { get; set; } = "";
-    public int TtsVoice { get; set; }
+    public int TtsVoice { get; set; } = 50;
     public string SpeakerSegmentationModel { get; set; } = "";
     public string SpeakerEmbeddingModel { get; set; } = "";
 }
@@ -107,7 +107,7 @@ public sealed class JobRecord
     public double? RealTimeFactor { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.Now;
     public JobRequest? Request { get; set; }
-    [JsonIgnore] public string Display => $"{Title} · {State} · {Progress:P0}  {Message}";
+    [JsonIgnore] public string Display => $"{Title} · {State switch { JobState.Queued => "等待中", JobState.Running => "处理中", JobState.Completed => "已完成", JobState.Cancelled => "已取消", JobState.Failed => "失败", _ => "已中断" }} · {Progress:P0}  {Message}";
 }
 
 public sealed class AppPaths
@@ -140,6 +140,8 @@ public sealed class AppPaths
         // Legacy layout is allowed only after validating each executable's machine type.
         var root = Directory.Exists(architectureRoot) ? architectureRoot : Path.Combine(EngineRoot, id);
         var found = Directory.Exists(root) ? Directory.EnumerateFiles(root, file, SearchOption.AllDirectories).FirstOrDefault() : null;
+        if (found is null && id == "yt-dlp" && Directory.Exists(root))
+            found = Directory.EnumerateFiles(root, Rid == "win-arm64" ? "yt-dlp_arm64.exe" : "yt-dlp.exe", SearchOption.AllDirectories).FirstOrDefault();
         if (found is null) throw new FileNotFoundException($"缺少 {Rid} 的 {id} 引擎。请运行 scripts/fetch-engines.ps1 或在设置中选择引擎目录。", file);
         PeArchitecture.RequireCompatible(found);
         return found;

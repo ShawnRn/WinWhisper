@@ -30,7 +30,7 @@ await Test("SRT/VTT bilingual round-trip and millisecond timestamps", () => Sync
 {
     foreach (var format in new[] { "srt", "vtt" })
     {
-        var actual = Subtitles.Parse(Subtitles.Export(session, format));
+        var actual = Subtitles.Parse(Subtitles.Export(session, format), bilingual: true);
         Check(actual.Count == 2 && actual[0].Text == "Hello, world." && actual[0].Translation == "你好，世界。", "双语文本丢失");
         Check(Math.Abs(actual[1].End - 11.999) < 0.0001, "毫秒时间戳改变");
     }
@@ -94,6 +94,41 @@ await Test("Session work path refuses traversal IDs", () => Sync(() =>
     var paths = new AppPaths(Path.Combine(run, "path-validation"));
     try { paths.SessionDirectory("../outside"); throw new Exception("路径穿越未阻止"); } catch (ArgumentException) { }
 }));
+await Test("Standard multiline SRT remains original text", () => Sync(() =>
+{
+    var parsed = Subtitles.Parse("1\n00:00:00,000 --> 00:00:02,000\nThe first line\nand the second line\n");
+    Check(parsed.Single().Text == "The first line\nand the second line" && parsed[0].Translation == "", "普通多行字幕被误判为译文");
+}));
+await Test("Model store applies only the selected model capability", () => Sync(() =>
+{
+    var directory = Path.Combine(run, "model-store"); Directory.CreateDirectory(directory);
+    File.WriteAllBytes(Path.Combine(directory, "fixture.bin"), [1, 2, 3, 4]);
+    var entry = new StoreModel("whisper-fixture", "test", "音视频转写", "", "", "4 bytes", "", "", new("fixture", "fixture", "test", "fixture.bin", "", 4));
+    var options = new AppSettings { SummaryModel = "keep-summary", TranslationModel = "keep-translation" };
+    Check(StoreModels.IsInstalled(entry, options, directory) && !StoreModels.IsApplied(entry, options, directory), "模型状态识别错误");
+    StoreModels.Apply(entry, options, directory);
+    Check(StoreModels.IsApplied(entry, options, directory) && options.SummaryModel == "keep-summary" && options.TranslationModel == "keep-translation", "应用转写模型意外修改语言模型");
+    Check(ModelCatalog.Items.All(m => m.Size > 0 && m.Sha256.Length == 64), "商店模型缺少固定大小或校验值");
+}));
+await Test("Model download resumes via HTTP Range and verifies SHA256", async () =>
+{
+    var data = Enumerable.Range(0, 300000).Select(i => (byte)(i % 251)).ToArray();
+    var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data));
+    var directory = Path.Combine(run, "download-resume"); Directory.CreateDirectory(directory);
+    await File.WriteAllBytesAsync(Path.Combine(directory, "fixture.bin.partial"), data[..100000]);
+    var handler = new DownloadHandler(data); using var downloader = new ModelDownloader(handler);
+    var file = await downloader.DownloadAsync(new("fixture", "test", "repo", "fixture.bin", ""), new(data.Length, sha), directory, null, CancellationToken.None);
+    Check(handler.RangeStart == 100000 && (await File.ReadAllBytesAsync(file)).SequenceEqual(data), "断点续传内容不正确");
+    Check(!File.Exists(file + ".partial"), "完成后残留半成品");
+});
+await Test("Corrupt model is rejected and never applied", async () =>
+{
+    var data = new byte[] { 1, 2, 3, 4 }; var directory = Path.Combine(run, "corrupt-download");
+    using var downloader = new ModelDownloader(new DownloadHandler(data));
+    try { await downloader.DownloadAsync(new("fixture", "test", "repo", "fixture.bin", ""), new(4, new string('0', 64)), directory, null, CancellationToken.None); throw new Exception("损坏模型被接受"); }
+    catch (InvalidDataException) { }
+    Check(!File.Exists(Path.Combine(directory, "fixture.bin")), "错误模型被移动到正式路径");
+});
 
 if (args.Contains("--integration"))
 {
@@ -160,6 +195,50 @@ if (args.Contains("--ollama"))
         await File.WriteAllTextAsync(Path.Combine(run, "ollama.txt"), answer);
     });
 }
+if (args.Contains("--speech"))
+{
+    var paths = new AppPaths(Path.Combine(run, "speech-data"), Path.Combine(root, "engines"));
+    var speechRoot = Path.Combine(root, "artifacts", "test-assets", "speech");
+    var kokoro = Path.Combine(speechRoot, "kokoro-multi-lang-v1_1");
+    var output = Path.Combine(run, "中英配音.wav");
+    var options = new AppSettings
+    {
+        EngineRoot = paths.EngineRoot, TtsModelPath = Path.Combine(kokoro, "model.onnx"), TtsVoicesPath = Path.Combine(kokoro, "voices.bin"),
+        TtsTokensPath = Path.Combine(kokoro, "tokens.txt"), TtsDataDirectory = Path.Combine(kokoro, "espeak-ng-data"),
+        TtsLexiconPath = Path.Combine(kokoro, "lexicon-us-en.txt") + "," + Path.Combine(kokoro, "lexicon-zh.txt"), TtsVoice = 50,
+        SpeakerSegmentationModel = Path.Combine(speechRoot, "sherpa-onnx-pyannote-segmentation-3-0", "model.onnx"),
+        SpeakerEmbeddingModel = Path.Combine(speechRoot, "speaker-embedding.onnx")
+    };
+    var cues = new[] { new SubtitleSegment { Start = 0, End = 6, Text = "This is a local transcription tool.", Translation = "这是一款本地音视频转写工具。" }, new SubtitleSegment { Start = 8, End = 15, Text = "Windows ARM64 and x64 are supported. Your content stays on this computer." } };
+    await Test("Sherpa native worker generates Chinese/English time-aligned speech", async () =>
+    {
+        var request = new JobRequest(Guid.NewGuid().ToString("N"), session.Id, "tts", "", run, options, OutputPath: output, InputSegments: cues);
+        await new WorkerClient(paths).RunAsync(request, _ => Task.CompletedTask, CancellationToken.None);
+        var duration = await new MediaTools(paths).ProbeAsync(output, CancellationToken.None);
+        Check(duration >= 8 && duration <= 15.1, "配音时间轴没有正确对齐");
+        var clip = Directory.GetFiles(Path.Combine(run, "dub"), "*.wav").Length; Check(clip >= 2, "未保存逐句配音检查点");
+    });
+    await Test("Sherpa speaker segmentation and embeddings run offline", async () =>
+    {
+        var request = new JobRequest(Guid.NewGuid().ToString("N"), session.Id, "diarize", output, run, options, InputSegments: cues);
+        JobEvent? final = null;
+        await new WorkerClient(paths).RunAsync(request, e => { if (e.Type == "completed") final = e; return Task.CompletedTask; }, CancellationToken.None);
+        Check(final?.Segments?.Any(s => s.Speaker.Length > 0) == true, "没有生成说话人标记");
+    });
+}
+var gguf = args.FirstOrDefault(a => a.StartsWith("--gguf="))?[7..];
+if (gguf is not null)
+{
+    await Test("Built-in llama.cpp CUDA loads GGUF and generates offline", async () =>
+    {
+        var options = new AppSettings { ModelProvider = LanguageModelKind.BuiltIn, GgufPath = gguf, Backend = ComputeBackend.Cuda };
+        using var provider = new LocalLanguageModelProvider(new AppPaths(Path.Combine(run, "built-in"), Path.Combine(root, "engines")), options);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var answer = await provider.GenerateAsync("local", "Translate English to Chinese. Output only the translation. /no_think", "Keep all media on this computer.", null, timeout.Token);
+        Check(answer.Any(c => c >= 0x4e00 && c <= 0x9fff), "内置语言模型没有生成中文内容");
+        await File.WriteAllTextAsync(Path.Combine(run, "built-in.txt"), answer);
+    });
+}
 await File.WriteAllTextAsync(Path.Combine(run, "results.json"), Json.Write(results));
 Console.WriteLine($"\n{results.Count - failures}/{results.Count} passed. Report: {run}");
 Environment.ExitCode = failures == 0 ? 0 : 1;
@@ -169,4 +248,17 @@ sealed class FakeModel : ILocalLanguageModelProvider
     public int Calls;
     public Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<string>>(["test"]);
     public Task<string> GenerateAsync(string model, string system, string prompt, Func<string, Task>? onDelta, CancellationToken ct) { ct.ThrowIfCancellationRequested(); Calls++; return Task.FromResult("译文"); }
+}
+
+sealed class DownloadHandler(byte[] data) : HttpMessageHandler
+{
+    public long? RangeStart;
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        RangeStart = request.Headers.Range?.Ranges.First().From;
+        var start = (int)(RangeStart ?? 0);
+        var response = new HttpResponseMessage(start > 0 ? HttpStatusCode.PartialContent : HttpStatusCode.OK) { Content = new ByteArrayContent(data[start..]) };
+        if (start > 0) response.Content.Headers.ContentRange = new(start, data.Length - 1, data.Length);
+        return Task.FromResult(response);
+    }
 }

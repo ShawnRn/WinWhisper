@@ -1,0 +1,106 @@
+<Window x:Class="MemoAI.App.MainWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:core="using:MemoAI.Core" Title="MemoAI Native">
+ <Grid x:Name="Root" AllowDrop="True" DragOver="Root_DragOver" Drop="Root_Drop">
+  <Grid.RowDefinitions><RowDefinition Height="48" /><RowDefinition Height="*" /><RowDefinition Height="32" /></Grid.RowDefinitions>
+  <Grid x:Name="TitleBar" Margin="18,0,150,0" ColumnSpacing="12">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="30"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <Border Width="27" Height="27" CornerRadius="8" Background="#5365DA"><FontIcon Glyph="&#xE8F2;" FontSize="15" Foreground="White"/></Border>
+   <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"><TextBlock Text="MemoAI" FontWeight="SemiBold" FontSize="14"/><TextBlock Text="Native" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" VerticalAlignment="Center"/></StackPanel>
+   <TextBlock x:Name="ArchitectureLabel" Grid.Column="3" Text="本地优先" FontSize="11" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+  </Grid>
+  <Grid Grid.Row="1">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="222"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+   <Grid Padding="12,12,12,8" RowSpacing="14">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Button Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" Click="Import_Click" Padding="14,11"><StackPanel Orientation="Horizontal" Spacing="10"><FontIcon Glyph="&#xE710;" FontSize="15"/><TextBlock Text="导入音视频"/></StackPanel></Button>
+    <StackPanel Grid.Row="1" Spacing="3">
+     <Button Style="{StaticResource NavButton}" Click="Library_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE8B7;" FontSize="17"/><TextBlock Text="媒体库"/></StackPanel></Button>
+     <Button Style="{StaticResource NavButton}" Click="Queue_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE9F9;" FontSize="17"/><TextBlock Text="任务与历史"/></StackPanel></Button>
+     <Button Style="{StaticResource NavButton}" Click="Record_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE720;" FontSize="17"/><TextBlock Text="录音"/></StackPanel></Button>
+     <Button Style="{StaticResource NavButton}" Click="Link_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE71B;" FontSize="17"/><TextBlock Text="导入在线链接"/></StackPanel></Button>
+    </StackPanel>
+    <Grid Grid.Row="2" RowSpacing="8"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+     <TextBlock Text="最近打开" FontSize="11" Margin="12,12,0,2" CharacterSpacing="80" Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+     <ListView x:Name="RecentList" Grid.Row="1" SelectionChanged="Recent_Changed" Background="Transparent" BorderThickness="0">
+      <ListView.ItemTemplate><DataTemplate x:DataType="core:MediaSession"><Grid Padding="4,6" ColumnSpacing="9"><Grid.ColumnDefinitions><ColumnDefinition Width="17"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE8A5;" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/><TextBlock Grid.Column="1" Text="{x:Bind Title}" FontSize="12" TextTrimming="CharacterEllipsis" MaxWidth="145"/></Grid></DataTemplate></ListView.ItemTemplate>
+     </ListView>
+    </Grid>
+    <StackPanel Grid.Row="3" Spacing="9">
+     <Button Style="{StaticResource NavButton}" Click="ModelStore_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE719;" FontSize="17"/><TextBlock Text="模型商店"/></StackPanel></Button>
+     <Button Style="{StaticResource NavButton}" Click="Settings_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE713;" FontSize="17"/><TextBlock Text="设置"/></StackPanel></Button>
+     <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="9" Padding="12"><StackPanel Orientation="Horizontal" Spacing="8"><Ellipse Width="6" Height="6" Fill="#47AD82"/><TextBlock Text="你的内容，留在本地" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel></Border>
+    </StackPanel>
+   </Grid>
+   <Border Grid.Column="1" Margin="0,0,10,0" CornerRadius="14" Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+    <Grid>
+     <Grid x:Name="LibraryView" Padding="30" RowSpacing="22">
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+      <Grid><StackPanel Spacing="7"><TextBlock Text="媒体库" FontSize="30" FontWeight="SemiBold"/><TextBlock Text="从声音到文字，再到值得留下的想法。" Style="{StaticResource Muted}"/></StackPanel><Button HorizontalAlignment="Right" VerticalAlignment="Center" Click="Link_Click" Content="粘贴链接"/></Grid>
+      <Border Grid.Row="1" Style="{StaticResource Card}" Padding="24"><Grid ColumnSpacing="20"><Grid.ColumnDefinitions><ColumnDefinition Width="64"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+       <Border Width="62" Height="62" CornerRadius="18" Background="{ThemeResource AccentFillColorTertiaryBrush}"><FontIcon Glyph="&#xE8E5;" FontSize="28" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/></Border>
+       <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="7"><TextBlock Text="把内容带进来" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="拖入音视频、SRT 或 VTT 字幕，开始本地转写与整理。" Style="{StaticResource Muted}"/></StackPanel>
+       <Button Grid.Column="2" Content="选择文件" VerticalAlignment="Center" Click="Import_Click" Padding="18,9"/>
+      </Grid></Border>
+      <Grid Grid.Row="2" ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="180"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="LibrarySearch" PlaceholderText="搜索标题、字幕与笔记" TextChanged="LibrarySearch_Changed"/><ComboBox x:Name="FolderFilter" Grid.Column="1" HorizontalAlignment="Stretch" PlaceholderText="全部文件夹" SelectionChanged="FolderFilter_Changed"/><Button Grid.Column="2" Content="批量转写" Click="Batch_Click"/></Grid>
+      <Grid Grid.Row="3">
+       <ListView x:Name="LibraryList" SelectionMode="Extended" IsItemClickEnabled="True" ItemClick="Library_ItemClick" Background="Transparent">
+        <ListView.ItemTemplate><DataTemplate x:DataType="core:MediaSession"><Grid Padding="12,15" ColumnSpacing="18"><Grid.ColumnDefinitions><ColumnDefinition Width="48"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+         <Border Width="46" Height="46" CornerRadius="12" Background="{ThemeResource SubtleFillColorSecondaryBrush}"><FontIcon Glyph="&#xE8B2;" FontSize="21" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/></Border>
+         <StackPanel Grid.Column="1" Spacing="6"><TextBlock Text="{x:Bind Title, Mode=OneWay}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/><TextBlock Text="{x:Bind Description}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel>
+         <TextBlock Grid.Column="2" Text="{x:Bind DurationLabel}" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+        </Grid></DataTemplate></ListView.ItemTemplate>
+       </ListView>
+       <StackPanel x:Name="LibraryEmpty" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14"><FontIcon Glyph="&#xE8F1;" FontSize="38" Foreground="{ThemeResource TextFillColorTertiaryBrush}"/><TextBlock Text="这里将收纳你的每一次灵感" FontSize="16" HorizontalAlignment="Center"/><TextBlock Text="导入第一段音视频，或从现有字幕开始。" Style="{StaticResource Muted}" HorizontalAlignment="Center"/></StackPanel>
+      </Grid>
+     </Grid>
+     <Grid x:Name="WorkspaceView" Visibility="Collapsed" RowSpacing="12" Padding="22,18">
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+      <Grid ColumnSpacing="14"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+       <StackPanel Spacing="5"><TextBlock x:Name="SessionTitle" FontSize="23" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/><TextBlock x:Name="SessionMeta" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel>
+       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+        <Button Content="开始转写" Style="{StaticResource AccentButtonStyle}" Click="Transcribe_Click"/>
+        <DropDownButton Content="导出"><DropDownButton.Flyout><MenuFlyout>
+         <MenuFlyoutItem Text="双语字幕 SRT" Tag="srt" Click="Export_Click"/><MenuFlyoutItem Text="字幕 VTT" Tag="vtt" Click="Export_Click"/><MenuFlyoutItem Text="字幕 ASS" Tag="ass" Click="Export_Click"/><MenuFlyoutItem Text="纯文本 TXT" Tag="txt" Click="Export_Click"/><MenuFlyoutItem Text="笔记 Markdown" Tag="md" Click="Export_Click"/><MenuFlyoutItem Text="项目备份 JSON" Tag="json" Click="Export_Click"/><MenuFlyoutItem Text="思维导图 SVG" Tag="svg" Click="Export_Click"/><MenuFlyoutSeparator/><MenuFlyoutItem Text="压制双语字幕视频" Click="VideoExport_Click"/><MenuFlyoutItem Text="配音与字幕视频" Tag="dub" Click="VideoExport_Click"/><MenuFlyoutItem Text="导出选中片段" Click="ClipExport_Click"/><MenuFlyoutSeparator/><MenuFlyoutItem Text="输出到 Obsidian" Tag="obsidian" Click="Integration_Click"/><MenuFlyoutItem Text="发送到 Notion…" Tag="notion" Click="Integration_Click"/>
+        </MenuFlyout></DropDownButton.Flyout></DropDownButton>
+        <ToggleButton x:Name="AiToggle" Content="AI" IsChecked="True" Click="AiToggle_Click"/>
+        <Button Content="···"><Button.Flyout><MenuFlyout><MenuFlyoutItem Text="重命名 / 移动文件夹" Click="Rename_Click"/><MenuFlyoutItem Text="关联音视频" Click="Associate_Click"/><MenuFlyoutItem Text="多行字幕拆为原文与译文" Click="SeparateBilingual_Click"/><MenuFlyoutItem Text="修复重复字幕" Click="Repair_Click"/><MenuFlyoutItem Text="区分说话人" Click="Diarize_Click"/><MenuFlyoutItem Text="生成对齐配音" Click="Dub_Click"/><MenuFlyoutItem Text="显示 / 隐藏时间轴" Click="Timeline_Click"/><MenuFlyoutItem Text="悬浮字幕" Click="Floating_Click"/><MenuFlyoutSeparator/><MenuFlyoutItem Text="从媒体库移除" Click="Delete_Click"/></MenuFlyout></Button.Flyout></Button>
+       </StackPanel>
+      </Grid>
+      <Grid Grid.Row="1" ColumnSpacing="18" x:Name="WorkspaceColumns" SizeChanged="Workspace_SizeChanged">
+       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition x:Name="AiColumn" Width="310"/></Grid.ColumnDefinitions>
+       <Grid RowSpacing="10"><Grid.RowDefinitions><RowDefinition Height="2*" MinHeight="160" MaxHeight="310"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="3*" MinHeight="80"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Border Background="#10141D" CornerRadius="10"><MediaPlayerElement x:Name="Player" AreTransportControlsEnabled="True"/></Border>
+        <Border x:Name="TimelineBorder" Grid.Row="1" Height="52" Visibility="Collapsed" Style="{StaticResource Card}"><Canvas x:Name="TimelineCanvas" Background="Transparent" SizeChanged="Timeline_SizeChanged" PointerPressed="Timeline_Pressed"/></Border>
+        <Grid Grid.Row="2" ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="SubtitleSearch" PlaceholderText="搜索字幕 · Ctrl+F" TextChanged="SubtitleSearch_Changed"/><Button Grid.Column="1" Content="替换" Click="Replace_Click"/></Grid>
+        <ListView x:Name="SubtitleList" Grid.Row="3" SelectionMode="Extended" SelectionChanged="Subtitle_Changed" Background="Transparent" KeyDown="Subtitle_KeyDown">
+         <ListView.ItemTemplate><DataTemplate x:DataType="core:SubtitleSegment"><StackPanel Padding="8,8" Spacing="5"><StackPanel Orientation="Horizontal" Spacing="10"><TextBlock Text="{x:Bind TimeLabel, Mode=OneWay}" FontSize="10" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/><TextBlock Text="{x:Bind Speaker, Mode=OneWay}" FontSize="10" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel><TextBlock Text="{x:Bind Text, Mode=OneWay}" FontSize="14" TextWrapping="Wrap"/><TextBlock Text="{x:Bind Translation, Mode=OneWay}" FontSize="13" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel></DataTemplate></ListView.ItemTemplate>
+        </ListView>
+        <Border Grid.Row="4" Style="{StaticResource Card}" Padding="10"><StackPanel Spacing="8"><Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock x:Name="EditorTime" Text="选择字幕进行编辑" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/><StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"><Button Content="时间" Click="EditTiming_Click" FontSize="11" Padding="8,3"/><Button Content="拆分" Click="Split_Click" FontSize="11" Padding="8,3"/><Button Content="合并" Click="Merge_Click" FontSize="11" Padding="8,3"/><Button Content="撤销" Click="Undo_Click" FontSize="11" Padding="8,3"/></StackPanel></Grid><TextBox x:Name="OriginalEditor" PlaceholderText="原文" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="76" TextChanged="Editor_Changed" GotFocus="Editor_Focus"/><TextBox x:Name="TranslationEditor" PlaceholderText="译文" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="66" TextChanged="Editor_Changed" GotFocus="Editor_Focus"/></StackPanel></Border>
+       </Grid>
+       <Border x:Name="AiPanel" Grid.Column="1" Style="{StaticResource Card}" Padding="16">
+        <Grid RowSpacing="14"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+         <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE945;" FontSize="17" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/><TextBlock Text="本地 AI 工作台" FontSize="15" FontWeight="SemiBold"/></StackPanel>
+         <Grid Grid.Row="1" ColumnSpacing="6" RowSpacing="6"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><Button Content="翻译字幕" HorizontalAlignment="Stretch" Tag="translate" Click="Ai_Click"/><Button Grid.Column="1" Content="内容总结" HorizontalAlignment="Stretch" Tag="summary" Click="Ai_Click"/><Button Grid.Row="1" Content="生成章节" HorizontalAlignment="Stretch" Tag="chapters" Click="Ai_Click"/><Button Grid.Row="1" Grid.Column="1" Content="思维导图" HorizontalAlignment="Stretch" Tag="mindmap" Click="Ai_Click"/><Button Grid.Row="2" Content="校对字幕" HorizontalAlignment="Stretch" Tag="correct" Click="Ai_Click"/><Button Grid.Row="2" Grid.Column="1" Content="停止 AI" HorizontalAlignment="Stretch" Click="StopAi_Click"/></Grid>
+         <TextBlock Grid.Row="2" x:Name="AiProviderLabel" Text="Ollama · 内容仅在本机处理" FontSize="11" Style="{StaticResource Muted}"/>
+         <Grid Grid.Row="3"><TextBox x:Name="AiOutput" Text="转写完成后，在这里翻译、总结，或向这段内容提问。" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" BorderThickness="0" Background="Transparent" FontSize="13"/><TreeView x:Name="MindMapTree" Visibility="Collapsed"/></Grid>
+         <StackPanel Grid.Row="4" Spacing="8"><TextBox x:Name="QuestionBox" PlaceholderText="向这段内容提问…" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="90"/><Button Content="提问" HorizontalAlignment="Right" Tag="ask" Click="Ai_Click"/></StackPanel>
+        </Grid>
+       </Border>
+      </Grid>
+     </Grid>
+     <Grid x:Name="QueueView" Visibility="Collapsed" Padding="30" RowSpacing="18"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><StackPanel Spacing="6"><TextBlock Text="任务与历史" FontSize="28" FontWeight="SemiBold"/><TextBlock Text="后台处理，随时取消；已完成的转写片段会保存为恢复检查点。" Style="{StaticResource Muted}"/></StackPanel><StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8"><Button Content="取消选中任务" Click="CancelJob_Click"/><Button Content="重试 / 恢复" Click="RetryJob_Click"/></StackPanel><ListView Grid.Row="2" x:Name="JobList" SelectionChanged="Job_Changed"/><TextBox Grid.Row="3" x:Name="JobDetails" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="200" AcceptsReturn="True"/></Grid>
+     <ScrollViewer x:Name="SettingsView" Visibility="Collapsed"><StackPanel x:Name="SettingsContent" Padding="30" Spacing="18" MaxWidth="1000" HorizontalAlignment="Stretch"/></ScrollViewer>
+     <Grid x:Name="ModelStoreView" Visibility="Collapsed" Padding="30" RowSpacing="20">
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+      <Grid ColumnSpacing="20"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel Spacing="8"><TextBlock Text="模型商店" FontSize="30" FontWeight="SemiBold"/><TextBlock Text="为你的内容，选一位本地搭档。下载、应用，都在这里完成。" Style="{StaticResource Muted}"/></StackPanel><Button Grid.Column="1" Content="导入本地模型" VerticalAlignment="Center" Click="ImportModel_Click"/></Grid>
+      <Grid Grid.Row="1" ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="180"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="StoreSearch" PlaceholderText="搜索模型、语言或用途" TextChanged="StoreFilter_Changed"/><ComboBox Grid.Column="1" x:Name="StoreCategory" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="StoreCategory_Changed"><ComboBoxItem Content="全部模型"/><ComboBoxItem Content="音视频转写"/><ComboBoxItem Content="翻译与总结"/><ComboBoxItem Content="配音与说话人"/><ComboBoxItem Content="已下载"/></ComboBox><Button Grid.Column="2" Content="刷新 Ollama" Click="RefreshOllama_Click"/></Grid>
+      <ScrollViewer Grid.Row="2"><StackPanel x:Name="StoreCards" Spacing="14" Padding="0,0,8,12"/></ScrollViewer>
+     </Grid>
+    </Grid>
+   </Border>
+  </Grid>
+  <Grid Grid.Row="2" Margin="18,0" ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><Ellipse Width="5" Height="5" Fill="#47AD82"/><TextBlock Grid.Column="1" x:Name="StatusText" Text="就绪" VerticalAlignment="Center" FontSize="11" TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/><ProgressBar Grid.Column="2" x:Name="StatusProgress" Width="140" Height="3" Visibility="Collapsed" VerticalAlignment="Center"/></Grid>
+ </Grid>
+</Window>

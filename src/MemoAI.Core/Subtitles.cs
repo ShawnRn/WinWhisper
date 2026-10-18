@@ -9,7 +9,7 @@ public static partial class Subtitles
 {
     [GeneratedRegex(@"(?<start>\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}|\d{1,2}:\d{2}[,.]\d{1,3})\s*-->\s*(?<end>\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}|\d{1,2}:\d{2}[,.]\d{1,3})[^\n]*\n(?<text>.*?)(?=\n\s*\n|\z)", RegexOptions.Singleline)]
     private static partial Regex CueRegex();
-    public static List<SubtitleSegment> Parse(string content)
+    public static List<SubtitleSegment> Parse(string content, bool bilingual = false)
     {
         var result = new List<SubtitleSegment>();
         content = content.Replace("\r\n", "\n").TrimStart('\uFEFF');
@@ -18,7 +18,7 @@ public static partial class Subtitles
             var start = ParseTime(match.Groups["start"].Value); var end = ParseTime(match.Groups["end"].Value);
             if (end <= start) continue;
             var lines = match.Groups["text"].Value.Trim().Split('\n');
-            result.Add(new() { Start = start, End = end, Text = lines[0], Translation = string.Join("\n", lines.Skip(1)) });
+            result.Add(new() { Start = start, End = end, Text = bilingual ? lines[0] : string.Join("\n", lines), Translation = bilingual ? string.Join("\n", lines.Skip(1)) : "" });
         }
         return result;
     }
