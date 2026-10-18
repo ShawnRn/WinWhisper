@@ -54,7 +54,7 @@ public sealed partial class MainWindow : Window
         sessions = new(store.GetSessions());
         RecentList.ItemsSource = sessions; SubtitleList.ItemsSource = visibleSegments; JobList.ItemsSource = jobLabels;
         scheduler = new JobScheduler(paths, store, () => settings, NotifyJobAsync);
-        RefreshLibrary(); RefreshJobs(); BuildSettings();
+        ApplyLibraryView(); RefreshLibrary(); RefreshJobs(); BuildSettings();
         navigationReady = true; ShowPage(LibraryView); UpdateAiAvailability();
         noticeTimer.Tick += (_, _) => { noticeTimer.Stop(); OperationNotice.IsOpen = false; };
         recordingTimer.Tick += (_, _) => RecordingTime.Text = recordingWatch.Elapsed.ToString(@"hh\:mm\:ss");
@@ -67,6 +67,11 @@ public sealed partial class MainWindow : Window
         playbackTimer.Tick += PlaybackTick; playbackTimer.Start();
         PlaybackSeek.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler((_, _) => seekingPlayback = true), true);
         PlaybackSeek.PointerCaptureLost += (_, _) => seekingPlayback = false;
+        QuestionBox.TextCompositionStarted += (_, _) => questionComposing = true;
+        QuestionBox.TextCompositionEnded += (_, _) => questionComposing = false;
+        Root.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(Root_BackPointerPressed), true);
+        Root.KeyboardAccelerators.Add(Accelerator(VirtualKey.Left, VirtualKeyModifiers.Menu, Back_Click));
+        Root.KeyboardAccelerators.Add(Accelerator(VirtualKey.GoBack, VirtualKeyModifiers.None, Back_Click));
         Root.KeyboardAccelerators.Add(Accelerator(VirtualKey.O, VirtualKeyModifiers.Control, Import_Click));
         Root.KeyboardAccelerators.Add(Accelerator(VirtualKey.F, VirtualKeyModifiers.Control, (_, _) => SubtitleSearch.Focus(FocusState.Programmatic)));
         Root.KeyboardAccelerators.Add(Accelerator(VirtualKey.Z, VirtualKeyModifiers.Control, Undo_Click));
@@ -128,6 +133,7 @@ public sealed partial class MainWindow : Window
     }
     private void ShowPage(UIElement page)
     {
+        RecordNavigation(page);
         foreach (var p in new UIElement[] { LibraryView, WorkspaceView, QueueView, RecordView, LinkView, SettingsView, ModelStoreView }) p.Visibility = p == page ? Visibility.Visible : Visibility.Collapsed;
         synchronizingNavigation = true;
         try { Sidebar.SelectedItem = page == QueueView ? NavQueue : page == RecordView ? NavRecord : page == LinkView ? NavLink : page == SettingsView ? NavSettings : page == ModelStoreView ? NavModels : NavLibrary; }
@@ -147,7 +153,7 @@ public sealed partial class MainWindow : Window
     {
         var search = LibrarySearch.Text.Trim(); var folder = FolderFilter.SelectedItem as string;
         var list = sessions.Where(s => (folder is null or "全部文件夹" || s.Folder == folder) && (search.Length == 0 || s.Title.Contains(search, StringComparison.OrdinalIgnoreCase) || s.Segments.Any(c => c.Text.Contains(search, StringComparison.OrdinalIgnoreCase)) || s.Summary.Contains(search, StringComparison.OrdinalIgnoreCase))).OrderByDescending(s => s.UpdatedAt).ToArray();
-        LibraryList.ItemsSource = list; LibraryEmpty.Visibility = list.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        LibraryList.ItemsSource = list; LibraryGrid.ItemsSource = list; LibraryEmpty.Visibility = list.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         var folders = new[] { "全部文件夹" }.Concat(sessions.Select(s => s.Folder).Distinct().Order()).ToArray();
         if (FolderFilter.ItemsSource is not string[] old || !folders.SequenceEqual(old))
         { loading = true; FolderFilter.ItemsSource = folders; FolderFilter.SelectedItem = folders.Contains(folder) ? folder : "全部文件夹"; loading = false; }
@@ -191,6 +197,7 @@ public sealed partial class MainWindow : Window
         selecting = true; OriginalEditor.Text = ""; TranslationEditor.Text = ""; selecting = false;
         Player.Source = null;
         var mediaPath = File.Exists(session.PlaybackPath) ? session.PlaybackPath : session.MediaPath;
+        videoAspect = 16d / 9; ArrangeWorkspace();
         if (File.Exists(mediaPath)) Player.Source = MediaSource.CreateFromUri(new Uri(mediaPath));
         PlaybackButton.IsEnabled = PlaybackSeek.IsEnabled = File.Exists(mediaPath);
         UpdateEditState();
@@ -269,7 +276,7 @@ public sealed partial class MainWindow : Window
     private async void Transcribe_Click(object sender, RoutedEventArgs e) => await SafeAsync(StartTranscriptionAsync);
     private async void Batch_Click(object sender, RoutedEventArgs e) => await SafeAsync(async () =>
     {
-        var list = LibraryList.SelectedItems.OfType<MediaSession>().Where(s => File.Exists(s.MediaPath)).ToArray();
+        var list = (LibraryGrid.Visibility == Visibility.Visible ? LibraryGrid.SelectedItems : LibraryList.SelectedItems).OfType<MediaSession>().Where(s => File.Exists(s.MediaPath)).ToArray();
         if (list.Length == 0) throw new InvalidOperationException("先在列表中按 Ctrl 或 Shift 选择需要转写的媒体。");
         if (list.Any(s => s.Segments.Count > 0) && !await ConfirmAsync("批量转写", "选中媒体的已有字幕将被新转写结果替换。", "加入队列")) return;
         foreach (var session in list) await scheduler.EnqueueAsync(session, "transcribe"); ShowPage(QueueView);
@@ -357,6 +364,9 @@ public sealed partial class MainWindow : Window
     {
         if (current is null || Player.MediaPlayer is null) return;
         current.Duration = Player.MediaPlayer.PlaybackSession.NaturalDuration.TotalSeconds; Dirty();
+        var playback = Player.MediaPlayer.PlaybackSession;
+        if (playback.NaturalVideoWidth > 0 && playback.NaturalVideoHeight > 0) videoAspect = (double)playback.NaturalVideoWidth / playback.NaturalVideoHeight;
+        ArrangeWorkspace();
         RefreshPlaybackControls();
     }
     private async void Player_MediaFailed(string errorMessage) => await SafeAsync(async () =>
@@ -431,8 +441,8 @@ public sealed partial class MainWindow : Window
         MindMapTree.RootNodes.Add(Node(document.RootElement, 0)); MindMapTree.Visibility = Visibility.Visible; ChatMessages.Visibility = Visibility.Collapsed; BackToChat.Visibility = Visibility.Visible;
     }
     private void StopAi_Click(object sender, RoutedEventArgs e) { if (aiCancellation is not null) { aiCancellation.Cancel(); AiActivityText.Text = "正在停止 AI · 已完成内容将保留…"; StopAiButton.IsEnabled = false; } }
-    private void AiToggle_Click(object sender, RoutedEventArgs e) { var show = AiToggle.IsChecked == true; AiPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed; AiColumn.Width = new GridLength(show ? 360 : 0); }
-    private void Workspace_SizeChanged(object sender, SizeChangedEventArgs e) { if (e.NewSize.Width < 760 && AiToggle.IsChecked == true) { AiToggle.IsChecked = false; AiToggle_Click(this, new()); } }
+    private void AiToggle_Click(object sender, RoutedEventArgs e) { var show = AiToggle.IsChecked == true; AiPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed; AiColumn.Width = new GridLength(show ? Math.Clamp(WorkspaceColumns.ActualWidth * .29, 300, 380) : 0); ArrangeWorkspace(); }
+    private void Workspace_SizeChanged(object sender, SizeChangedEventArgs e) { if (WorkspaceView.Visibility != Visibility.Visible || e.NewSize.Width <= 0) return; if (e.NewSize.Width < 760 && AiToggle.IsChecked == true) AiToggle.IsChecked = false; AiToggle_Click(this, new()); }
     private async void Export_Click(object sender, RoutedEventArgs e) => await SafeAsync(async () =>
     {
         RequireSession(); var extension = (string)((FrameworkElement)sender).Tag; var session = current!;

@@ -78,6 +78,7 @@ public sealed class AppSettings
     public string ModelRoot { get; set; } = "";
     public string Theme { get; set; } = "Default";
     public bool ReduceMotion { get; set; }
+    public string LibraryViewMode { get; set; } = "List";
     public bool EnableVad { get; set; } = true;
     public string VadModelPath { get; set; } = "";
     public string Glossary { get; set; } = "";

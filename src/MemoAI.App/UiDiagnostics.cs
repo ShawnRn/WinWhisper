@@ -33,6 +33,7 @@ public sealed partial class MainWindow
             }
             var fixture = new MediaSession { Title = "界面回归样本", MediaPath = wavePath, Segments = [new() { Start = 0, End = 1, Text = "界面回归测试。" }] };
             await OpenSessionAsync(fixture);
+            AiToggle.IsChecked = true; AiToggle_Click(this, new()); await Task.Delay(120);
             for (var i = 0; i < 100 && Player.MediaPlayer.PlaybackSession.NaturalDuration.TotalSeconds == 0; i++) await Task.Delay(20);
             result["nativePlaybackOpensRealMedia"] = Player.MediaPlayer.PlaybackSession.NaturalDuration.TotalSeconds > 0.9;
             result["workspaceSelectsLibrary"] = NavLibrary.IsSelected;
@@ -68,6 +69,38 @@ public sealed partial class MainWindow
             var cjkMarkdown = new NativeMarkdownView { Text = "专家**「无师」**分享**理性**的观点。" };
             var cjkParagraph = ((RichTextBlock)((StackPanel)cjkMarkdown.Content).Children[0]).Blocks.OfType<Microsoft.UI.Xaml.Documents.Paragraph>().Single();
             result["nativeMarkdownHandlesChineseQuotes"] = cjkParagraph.Inlines.OfType<Microsoft.UI.Xaml.Documents.Bold>().Count() == 2 && !cjkParagraph.Inlines.OfType<Microsoft.UI.Xaml.Documents.Run>().Any(r => r.Text.Contains("**"));
+            var timestamps = new NativeMarkdownView { Text = "引用 [00:00:38.530] 和 01:09，代码 `00:00:28.060`。" };
+            var timestampParagraph = ((RichTextBlock)((StackPanel)timestamps.Content).Children[0]).Blocks.OfType<Microsoft.UI.Xaml.Documents.Paragraph>().Single();
+            result["timestampReferencesBecomeLinksExceptCode"] = timestampParagraph.Inlines.OfType<Microsoft.UI.Xaml.Documents.Hyperlink>().Count() == 2;
+            var streamTurn = fixture.Chat.Last(); followChat = true;
+            streamTurn.Content = string.Join("\n\n", Enumerable.Range(0, 45).Select(i => $"流式段落 {i}：这是一段用于真实布局的长文本。"));
+            for (var i = 0; i < 8; i++) { streamTurn.Content += $"\n\n新增内容 {i}。"; FollowChat(); await Task.Delay(60); }
+            await Task.Delay(160);
+            result["streamingFollowsLatestAfterLayout"] = chatScroll is not null && chatScroll.ScrollableHeight > 100 && chatScroll.ScrollableHeight - chatScroll.VerticalOffset < 3;
+            result["chatScrollDiagnostics"] = $"visible={AiPanel.Visibility}; attached={chatScroll is not null}; follow={followChat}; offset={chatScroll?.VerticalOffset}; extent={chatScroll?.ScrollableHeight}; viewport={chatScroll?.ViewportHeight}";
+            chatScroll?.ChangeView(null, 0, null, true); await Task.Delay(120);
+            var readingOffset = chatScroll?.VerticalOffset ?? -1;
+            streamTurn.Content += "\n\n阅读前文时新增的回复。"; FollowChat(); await Task.Delay(160);
+            result["streamingPreservesReadingPosition"] = !followChat && Math.Abs((chatScroll?.VerticalOffset ?? -100) - readingOffset) < 3;
+            chatScroll?.ChangeView(null, chatScroll.ScrollableHeight, null, true); await Task.Delay(120);
+            streamTurn.Content += "\n\n回到底部后继续生成。"; FollowChat(); await Task.Delay(160);
+            result["streamingResumesAtBottom"] = followChat && chatScroll is not null && chatScroll.ScrollableHeight - chatScroll.VerticalOffset < 3;
+            ArrangeWorkspace(); WorkspaceView.UpdateLayout();
+            result["wideWorkspaceUsesColumnsAndVideoAspect"] = mediaLayout == "columns" && Grid.GetColumn(TranscriptPane) == 1 && Math.Abs(Player.ActualWidth / Player.ActualHeight - videoAspect) < .05 && SubtitleList.ActualHeight > Player.ActualHeight;
+            AppWindow.Resize(new Windows.Graphics.SizeInt32(1320, 900)); await Task.Delay(180); ArrangeWorkspace();
+            result["mediumWorkspaceReflowsEditor"] = mediaLayout == "compact" && Grid.GetRow(TranscriptPane) == 1 && Grid.GetColumn(SubtitleEditorPane) == 1;
+            AppWindow.Resize(new Windows.Graphics.SizeInt32(800, 900)); await Task.Delay(180); ArrangeWorkspace();
+            result["narrowWorkspaceStacksWithoutVideoOverflow"] = mediaLayout == "stacked" && VideoPane.ActualWidth <= MediaWorkspace.ActualWidth + 1;
+            AppWindow.Resize(new Windows.Graphics.SizeInt32(1500, 980)); AiToggle.IsChecked = true; AiToggle_Click(this, new()); await Task.Delay(180);
+            sessions.Add(fixture); ShowPage(LibraryView); RefreshLibrary(); LibraryList.SelectedItems.Add(fixture);
+            LibraryMode_Click(LibraryGridMode, new());
+            result["libraryGridPersistsModeAndSelection"] = LibraryGrid.Visibility == Visibility.Visible && LibraryGrid.SelectedItems.Contains(fixture) && store.LoadSettings().LibraryViewMode == "Grid";
+            LibrarySearch.Text = fixture.Title;
+            result["libraryViewsShareFilters"] = ReferenceEquals(LibraryGrid.ItemsSource, LibraryList.ItemsSource) && LibraryGrid.Items.Count == 1;
+            LibraryMode_Click(LibraryListMode, new()); LibrarySearch.Text = "";
+            result["libraryListModeRestores"] = LibraryList.Visibility == Visibility.Visible && LibraryGridMode.IsChecked == false && store.LoadSettings().LibraryViewMode == "List";
+            Back_Click(this, new()); await Task.Delay(100);
+            result["backReturnsToMediaWithoutClearingChat"] = WorkspaceView.Visibility == Visibility.Visible && current == fixture && ReferenceEquals(ChatMessages.ItemsSource, fixture.Chat);
             result["bundledTypographyConfigured"] = SessionTitle.FontFamily.Source.Contains("NotoSansSC") && File.Exists(Path.Combine(AppContext.BaseDirectory, "Assets", "Fonts", "NotoSansSC.ttf"));
             BuildModelStore(); ShowPage(ModelStoreView);
             await Task.Delay(100); // Let the real WinUI layout establish the scroll extent.
