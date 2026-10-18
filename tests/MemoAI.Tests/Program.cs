@@ -136,6 +136,8 @@ await Test("Smart English punctuation is idempotent and leaves machine content i
     Check(actual == "SpaceX’s rocket, it’s ready. The engineers’ plan: “Go now”, ‘she said’. ’Twas the ’90s. 中文「引号」。", actual);
     Check(ChineseTypography.Apply(actual) == actual, "弯引号不幂等");
     Check(ChineseTypography.Apply("'James' said 'yes'.") == "‘James’ said ‘yes’.", "以 s 结尾的引文被当成所有格");
+    Check(ChineseTypography.Apply("I’ m Franz. it ’ s ready; SpaceX ' s rocket. We ’ re here, don ’ t stop.") == "I’m Franz. it’s ready; SpaceX’s rocket. We’re here, don’t stop.", "ASR 撇号周围空格未合并");
+    Check(ChineseTypography.Apply("He said 's' and 'm'. Rock 'n' roll. I\n’ m") == "He said ‘s’ and ‘m’. Rock ‘n’ roll. I\n’ m", "错误合并引文或跨行缩写");
     foreach (var machine in new[] { "`it's 'raw'`", "```json\n{\"x\":\"it's\"}\n```", "https://example.com/it's", @"C:\Users\it's\file.txt", "{\"text\":\"it's\"}" })
         Check(ChineseTypography.Apply(machine) == machine, "机器内容被改写：" + machine);
 }));
@@ -168,6 +170,10 @@ await Test("Sentence boundaries use original word times and reject fabricated al
     cue.Translation = ""; cue.Words[2] = cue.Words[2] with { Start = .1 }; Check(!SentenceSegmentation.HasReliableWords(cue), "接受了倒序时间戳");
     using var tokens = JsonDocument.Parse("{\"tokens\":[{\"id\":50363,\"text\":\"[_BEG_]\",\"offsets\":{\"from\":0,\"to\":0}},{\"id\":1,\"text\":\" Space\",\"offsets\":{\"from\":100,\"to\":200}},{\"id\":2,\"text\":\"X's\",\"offsets\":{\"from\":200,\"to\":500}}]}");
     var words = SentenceSegmentation.ReadWhisperWords(tokens.RootElement, 30, 40); Check(words.Single() == new TimedWord(" SpaceX’s", 30.1, 30.5), "BPE 词片合并或绝对时间错误");
+    var splitSuffix = SentenceSegmentation.ReadOnnxWords(["▁I", "’", "▁m", "▁here", "▁it", "’", "▁s", "▁ready"], [0, .2f, .3f, .5f, 1, 1.2f, 1.3f, 1.5f], [.2f, .1f, .2f, .5f, .2f, .1f, .2f, .5f], 30, 40);
+    Check(splitSuffix.Count == 4 && splitSuffix[0].Text == " I’m" && splitSuffix[2].Text == " it’s" && Math.Abs(splitSuffix[0].End - 30.5) < .001, "缩写词片未按真实时间合并");
+    var suffixCue = new SubtitleSegment { Start = 30, End = 32, Text = "I’ m here it’ s ready", Words = splitSuffix };
+    Check(SentenceSegmentation.HasReliableWords(suffixCue) && SentenceSegmentation.Optimize([suffixCue]).Single().Text == "I’m here it’s ready", "断句重建文本重新引入空格或丢失对齐");
 }));
 await Test("Translation API sends only explicit text and does not leak error bodies", async () =>
 {

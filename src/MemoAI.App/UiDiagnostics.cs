@@ -156,6 +156,51 @@ public sealed partial class MainWindow
             var job = new JobRecord { SessionId = fixture.Id, State = JobState.Running, Progress = 0.42, Backend = "Cuda", Device = "Fixture GPU", Message = "片段 2/6", StartedAt = DateTimeOffset.Now, Request = new("fixture", fixture.Id, "transcribe", "", paths.SessionDirectory(fixture.Id), new() { TranscriptionModelPath = "fixture-model.bin", Language = "zh" }) };
             job.Operation = "transcribe"; store.SaveJob(job); RefreshJobs(); RefreshTranscriptionProgress();
             result["workspaceProgressIsVisibleAndScoped"] = TranscriptionProgressCard.Visibility == Visibility.Visible && Math.Abs(TranscriptionProgress.Value - 42) < 0.01 && TranscriptionRunDetails.Text.Contains("fixture-model") && TranscriptionRunDetails.Text.Contains("Fixture GPU") && !StartTranscribeButton.IsEnabled;
+            // Replay cumulative Worker snapshots while a cue is selected and the
+            // transcript is scrolled. The old ItemsSource reset recreated these
+            // containers and lost selection on every batch.
+            var originalCues = fixture.Segments.ToArray();
+            fixture.Segments = new(Enumerable.Range(0, 80).Select(i => new SubtitleSegment { Start = i * 2, End = i * 2 + 1.8, Text = $"It’s subtitle {i}. SpaceX’s rocket." }));
+            TrackSegments(); RefreshSubtitles(); sessions.Add(fixture);
+            var watchedCue = fixture.Segments[20];
+            followingPlaybackSelection = true; SubtitleList.SelectedItem = watchedCue; followingPlaybackSelection = false;
+            SubtitleList.ScrollIntoView(watchedCue); await Task.Delay(100); SubtitleList.UpdateLayout();
+            var watchedContainer = SubtitleList.ContainerFromItem(watchedCue);
+            var stableSource = SubtitleList.ItemsSource; var stableCues = fixture.Segments;
+            var stableChat = ChatMessages.ItemsSource; var stableMedia = Player.Source; var stableBackdrop = SystemBackdrop;
+            var transcriptScroll = Descendants(SubtitleList).OfType<ScrollViewer>().First();
+            var scrollBefore = transcriptScroll.VerticalOffset; var navBefore = navigationAnimationCount;
+            var anchorBefore = (watchedContainer as FrameworkElement)?.TransformToVisual(SubtitleList).TransformPoint(new Windows.Foundation.Point()).Y;
+            var resets = 0; var unchangedNotifications = 0;
+            System.Collections.Specialized.NotifyCollectionChangedEventHandler countResets = (_, args) => { if (args.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset) resets++; };
+            System.ComponentModel.PropertyChangedEventHandler countChanges = (_, _) => unchangedNotifications++;
+            visibleSegments.CollectionChanged += countResets; watchedCue.PropertyChanged += countChanges;
+            for (var batch = 0; batch < 8; batch++)
+            {
+                var snapshot = fixture.Segments.Select(c => c.Copy()).Append(new() { Start = 160 + batch * 2, End = 161.8 + batch * 2, Text = $"New batch {batch}." }).ToArray();
+                await NotifyJobAsync(job, new("segments", "字幕已保存到检查点", .42, snapshot));
+                await Task.Delay(20);
+            }
+            SubtitleList.UpdateLayout();
+            var anchorAfter = (SubtitleList.ContainerFromItem(watchedCue) as FrameworkElement)?.TransformToVisual(SubtitleList).TransformPoint(new Windows.Foundation.Point()).Y;
+            // VirtualizingStackPanel adjusts its estimated extent as new items
+            // arrive. Offset can change while the same visible anchor stays in
+            // exactly the same place; assert the user's reading position.
+            result["streamingSubtitlesKeepSourceContainersSelectionAndScroll"] = watchedContainer is not null && ReferenceEquals(stableSource, SubtitleList.ItemsSource)
+                && ReferenceEquals(stableCues, fixture.Segments) && ReferenceEquals(watchedCue, SubtitleList.SelectedItem)
+                && ReferenceEquals(watchedContainer, SubtitleList.ContainerFromItem(watchedCue)) && anchorBefore is >= 0 && anchorBefore < SubtitleList.ActualHeight
+                && anchorAfter.HasValue && Math.Abs(anchorBefore.Value - anchorAfter.Value) < 1 && resets == 0 && unchangedNotifications == 0;
+            result["streamingSubtitleDetails"] = $"realized={watchedContainer is not null};source={ReferenceEquals(stableSource, SubtitleList.ItemsSource)};collection={ReferenceEquals(stableCues, fixture.Segments)};selection={ReferenceEquals(watchedCue, SubtitleList.SelectedItem)};container={ReferenceEquals(watchedContainer, SubtitleList.ContainerFromItem(watchedCue))};offset={scrollBefore}/{transcriptScroll.VerticalOffset};anchor={anchorBefore}/{(SubtitleList.ContainerFromItem(watchedCue) as FrameworkElement)?.TransformToVisual(SubtitleList).TransformPoint(new Windows.Foundation.Point()).Y};resets={resets};notifications={unchangedNotifications}";
+            result["streamingSubtitlesDoNotRebuildWorkspace"] = ReferenceEquals(stableChat, ChatMessages.ItemsSource) && ReferenceEquals(stableMedia, Player.Source) && ReferenceEquals(stableBackdrop, SystemBackdrop) && navBefore == navigationAnimationCount;
+            var corrected = fixture.Segments.Select(c => c.Copy()).ToArray(); corrected[20].Text = "It’s corrected in place.";
+            await NotifyJobAsync(job, new("segments", "修正一条字幕", .43, corrected));
+            result["streamingSubtitleCorrectionNotifiesOnlyChangedCue"] = watchedCue.Text == corrected[20].Text && unchangedNotifications == 1 && ReferenceEquals(watchedContainer, SubtitleList.ContainerFromItem(watchedCue));
+            visibleSegments.CollectionChanged -= countResets; watchedCue.PropertyChanged -= countChanges;
+            sessions.Remove(fixture); fixture.Segments = new(originalCues); TrackSegments(); RefreshSubtitles();
+            var quoteProbe = new TextBlock { Text = "’", FontSize = 16, FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["ContentControlThemeFontFamily"] };
+            quoteProbe.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+            result["englishApostropheUsesProportionalGlyph"] = quoteProbe.DesiredSize.Width > 0 && quoteProbe.DesiredSize.Width < 8;
+            result["englishApostropheWidth"] = quoteProbe.DesiredSize.Width;
             job.State = JobState.Completed; job.Progress = 1; store.SaveJob(job); RefreshJobs(); RefreshTranscriptionProgress();
             result["workspaceCompletionRestoresStart"] = StartTranscribeButton.IsEnabled && CancelTranscription.Visibility == Visibility.Collapsed && TranscriptionStage.Text.StartsWith("转写完成") && TranscriptionProgress.Visibility == Visibility.Collapsed;
             result["playbackControlsDoNotOverlayVideo"] = !Player.AreTransportControlsEnabled;

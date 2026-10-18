@@ -21,6 +21,9 @@ public static class ChineseTypography
             value = Regex.Replace(value, "“([^”\\r\\n]*[\u3400-\u9fff][^”\\r\\n]*)”|‘([^’\\r\\n]*[\u3400-\u9fff][^’\\r\\n]*)’", match => "「" + (match.Groups[1].Success ? match.Groups[1].Value : match.Groups[2].Value) + "」");
             value = Regex.Replace(value, "\"([^\"\r\n]*[\u3400-\u9fff][^\"\r\n]*)\"", "「$1」");
             // Apostrophes first: contractions, possessives and leading elisions.
+            // ASR word pieces can contain spaces around a split suffix. Only join
+            // recognised English suffixes, never a quoted word or a line break.
+            value = Regex.Replace(value, @"(?<=[A-Za-z])[ \t]*['‘’][ \t]*(s|t|re|ve|ll|d|m)\b(?!['‘’])", "’$1", RegexOptions.IgnoreCase);
             value = Regex.Replace(value, @"(?<=[A-Za-z])['‘](?=[A-Za-z])|'(?=(?:tis|twas|em|cause|round|til|\d{2}s)\b)", "’", RegexOptions.IgnoreCase);
             value = Regex.Replace(value, "\"([^\"\\r\\n]+)\"", "“$1”");
             value = Regex.Replace(value, "(?<![A-Za-z0-9])'([^'\\r\\n]+)'", m => Regex.IsMatch(m.Groups[1].Value, "[\u3400-\u9fff]") ? "「" + m.Groups[1].Value + "」" : "‘" + m.Groups[1].Value + "’");

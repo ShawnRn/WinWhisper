@@ -26,6 +26,7 @@ public sealed partial class MainWindow : Window
     private AppSettings settings;
     private readonly ObservableCollection<MediaSession> sessions;
     private readonly ObservableCollection<SubtitleSegment> visibleSegments = [];
+    private readonly HashSet<SubtitleSegment> trackedSegments = [];
     private readonly ObservableCollection<string> jobLabels = [];
     private List<JobRecord> jobs = [];
     private readonly JobScheduler scheduler;
@@ -222,8 +223,11 @@ public sealed partial class MainWindow : Window
     private void Dirty() { if (current is null) return; dirty = true; saveTimer.Stop(); saveTimer.Start(); }
     private void TrackSegments()
     {
-        if (current is null) return;
-        foreach (var s in current.Segments) { s.PropertyChanged -= Segment_Changed; s.PropertyChanged += Segment_Changed; }
+        var next = current?.Segments.ToHashSet() ?? [];
+        foreach (var s in trackedSegments.Where(s => !next.Contains(s)).ToArray())
+        { s.PropertyChanged -= Segment_Changed; trackedSegments.Remove(s); }
+        foreach (var s in next)
+            if (trackedSegments.Add(s)) s.PropertyChanged += Segment_Changed;
     }
     private void Segment_Changed(object? sender, PropertyChangedEventArgs e) { if (!selecting) Dirty(); }
     private void Snapshot()
@@ -261,8 +265,10 @@ public sealed partial class MainWindow : Window
         if (current is null) return;
         var search = SubtitleSearch.Text.Trim();
         var filtered = current.Segments.Where(s => search.Length == 0 || s.Text.Contains(search, StringComparison.OrdinalIgnoreCase) || s.Translation.Contains(search, StringComparison.OrdinalIgnoreCase)).ToArray();
-        // Replace the source once; ListView virtualizes containers even for large transcripts.
-        SubtitleList.ItemsSource = filtered;
+        var wasFollowing = followingPlaybackSelection;
+        followingPlaybackSelection = true;
+        try { SyncItems(visibleSegments, filtered); }
+        finally { followingPlaybackSelection = wasFollowing; }
         SessionMeta.Text = $"{current.Folder}  ·  {current.Segments.Count} 条字幕  ·  {current.DurationLabel}";
     }
     private async Task<IReadOnlyList<string>> PickFilesAsync(params string[] extensions)
@@ -348,12 +354,13 @@ public sealed partial class MainWindow : Window
                     var session = sessions.FirstOrDefault(s => s.Id == job.SessionId);
                     if (session is not null)
                     {
+                        IReadOnlyList<SubtitleSegment> snapshot = segments;
                         if (job.Operation == "transcribe-range")
                         {
                             var start = job.Request!.RangeStart ?? 0; var end = job.Request.RangeEnd ?? double.MaxValue;
-                            session.Segments = new(session.Segments.Where(s => s.End <= start || s.Start >= end).Concat(segments).OrderBy(s => s.Start));
+                            snapshot = session.Segments.Where(s => s.End <= start || s.Start >= end).Concat(segments).OrderBy(s => s.Start).ToArray();
                         }
-                        else session.Segments = new(segments);
+                        ApplySubtitleSnapshot(session, snapshot);
                         if (session.Duration == 0) session.Duration = segments.Select(s => s.End).DefaultIfEmpty().Max();
                         store.SaveSession(session);
                         if (current?.Id == session.Id) { current = session; TrackSegments(); RefreshSubtitles(); }
@@ -371,7 +378,12 @@ public sealed partial class MainWindow : Window
     private void RefreshJobs()
     {
         var selectedId = JobList.SelectedIndex >= 0 && JobList.SelectedIndex < jobs.Count ? jobs[JobList.SelectedIndex].Id : null;
-        jobs = store.GetJobs(); jobLabels.Clear(); foreach (var job in jobs) jobLabels.Add(job.Display);
+        jobs = store.GetJobs();
+        // Most notifications only change one job's label; never reset the list.
+        for (var i = 0; i < jobs.Count; i++)
+            if (i >= jobLabels.Count) jobLabels.Add(jobs[i].Display);
+            else if (jobLabels[i] != jobs[i].Display) jobLabels[i] = jobs[i].Display;
+        while (jobLabels.Count > jobs.Count) jobLabels.RemoveAt(jobLabels.Count - 1);
         if (selectedId is not null) JobList.SelectedIndex = jobs.FindIndex(j => j.Id == selectedId);
     }
     private void Job_Changed(object sender, SelectionChangedEventArgs e)

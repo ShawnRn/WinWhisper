@@ -4,7 +4,7 @@
  <Application.Resources>
   <ResourceDictionary>
    <ResourceDictionary.MergedDictionaries><XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" /><ResourceDictionary Source="NativeContinuousStyles.xaml"/></ResourceDictionary.MergedDictionaries>
-   <FontFamily x:Key="ContentControlThemeFontFamily">ms-appx:///Assets/Fonts/NotoSansSC.ttf#Noto Sans SC</FontFamily>
+   <FontFamily x:Key="ContentControlThemeFontFamily">Segoe UI Variable Text, ms-appx:///Assets/Fonts/NotoSansSC.ttf#Noto Sans SC</FontFamily>
    <CornerRadius x:Key="ControlCornerRadius">8</CornerRadius>
 
    <Style TargetType="TextBlock"><Setter Property="FontFamily" Value="{StaticResource ContentControlThemeFontFamily}"/><Setter Property="FontSize" Value="14"/></Style>

@@ -8,6 +8,8 @@
 
 当前预发布为 [0.1.0 Preview 1](https://github.com/ShawnRn/WinWhisper/releases/tag/v0.1.0-preview.1)。需要 Windows 11，无需另装 .NET SDK。
 
+`main` 分支包含发布后的字幕增量刷新和英语撇号排版修复；以下 Preview 1 安装包仍保留原发布内容。
+
 | 安装程序 | 适用设备 |
 |---|---|
 | [Universal](https://github.com/ShawnRn/WinWhisper/releases/download/v0.1.0-preview.1/WinWhisper-0.1.0-preview.1-Universal-Setup.exe) | 自动选择 ARM64 / x64，包含两套离线负载 |
@@ -20,6 +22,7 @@
 
 ## 能做什么
 
+- 转写字幕增量更新，保留已显示条目、选中和滚动位置；英语缩写使用紧凑的弯撇号。
 - 导入本地音视频、SRT / VTT 字幕，或粘贴在线媒体链接；下载后可自动排队转写。
 - 使用 whisper.cpp 在 CUDA、Vulkan、CPU 之间选择，显示实际后端、设备、耗时和进度；按媒体保存语言、模型及细分参数。
 - 模型商店包含 Parakeet v2 / v3 / 日语版、SenseVoice Small、Paraformer、FunASR Nano、Qwen3-ASR 的 ONNX 包，支持校验下载、解压、应用及检查点。ONNX 自动尝试 CUDA → DirectML → CPU，按执行记录确认 GPU；ARM64 的 CUDA 使用独立 x64 兼容 Worker。不同量化版本的限制见 [GPU 支持](docs/GPU.md)。

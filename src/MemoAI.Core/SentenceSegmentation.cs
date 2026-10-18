@@ -29,6 +29,7 @@ public static class SentenceSegmentation
         // TDT can assign a zero duration to a continuation piece (e.g. the y
         // in country). Merge the BPE pieces first; the complete word must still
         // have a positive duration. Never invent an end for a zero-length word.
+        words = JoinEnglishSuffixes(words);
         return words.Any(w => w.End <= w.Start) ? [] : words.Select(w => w with { Text = ChineseTypography.Apply(w.Text) }).ToList();
     }
 
@@ -50,7 +51,24 @@ public static class SentenceSegmentation
             { var previous = words[^1]; words[^1] = previous with { Text = previous.Text + text, End = Math.Max(previous.End, end) }; }
             else words.Add(new(text, start, end));
         }
-        return words.Select(w => w with { Text = ChineseTypography.Apply(w.Text) }).ToList();
+        return JoinEnglishSuffixes(words).Select(w => w with { Text = ChineseTypography.Apply(w.Text) }).ToList();
+    }
+
+    private static List<TimedWord> JoinEnglishSuffixes(List<TimedWord> words)
+    {
+        var result = new List<TimedWord>();
+        foreach (var word in words)
+        {
+            if (result.Count > 0 &&
+                (Regex.IsMatch(result[^1].Text, @"[A-Za-z][’‘']\s*$") && Regex.IsMatch(word.Text, @"^\s+(?:s|t|re|ve|ll|d|m)\b", RegexOptions.IgnoreCase)
+                 || Regex.IsMatch(result[^1].Text, @"[A-Za-z]$") && Regex.IsMatch(word.Text, @"^\s+[’‘']\s*(?:s|t|re|ve|ll|d|m)\b", RegexOptions.IgnoreCase)))
+            {
+                var previous = result[^1];
+                result[^1] = previous with { Text = ChineseTypography.Apply(previous.Text + word.Text), End = Math.Max(previous.End, word.End) };
+            }
+            else result.Add(word);
+        }
+        return result;
     }
 
     public static List<SubtitleSegment> Optimize(IEnumerable<SubtitleSegment> source, IReadOnlyList<AudioSilence>? silences = null)
@@ -79,7 +97,7 @@ public static class SentenceSegmentation
                     if ((natural || gap >= .8) && duration >= 1.2) break;
                 }
                 var selected = words[first..(best + 1)];
-                output.Add(new() { Start = selected[0].Start, End = selected[^1].End, Text = string.Concat(selected.Select(w => w.Text)).Trim(), Speaker = group[0].Speaker, Words = [..selected] });
+                output.Add(new() { Start = selected[0].Start, End = selected[^1].End, Text = ChineseTypography.Apply(string.Concat(selected.Select(w => w.Text)).Trim()), Speaker = group[0].Speaker, Words = [..selected] });
                 first = best + 1;
             }
             group.Clear();
