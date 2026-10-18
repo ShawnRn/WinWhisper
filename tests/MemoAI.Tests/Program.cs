@@ -29,6 +29,50 @@ var session = new MediaSession
         new() { Start = 5.001, End = 11.999, Text = "Windows ARM64 and x64.", Translation = "双平台测试。" }
     }
 };
+await Test("Conversation migration, new-chat isolation and persisted active history", () => Sync(() =>
+{
+    var media = new MediaSession { Summary = "旧总结", Chat = [new() { Role = "user", Content = "旧问题" }, new() { Content = "旧回答" }] };
+    var legacy = ChatConversations.Ensure(media); var id = legacy.Id;
+    var next = ChatConversations.Create(media); next.Draft = "草稿";
+    Check(next.Id != id && media.Chat.Count == 0 && legacy.Messages.Count == 2, "新建丢失旧对话或泄漏历史");
+    media.Chat.Add(new() { Role = "user", Content = "第二个问题" });
+    var paths = new AppPaths(Path.Combine(run, "chat-conversations")); var database = new Store(paths.DataRoot);
+    database.SaveSession(media); var reopened = database.GetSession(media.Id)!; var active = ChatConversations.Ensure(reopened);
+    Check(reopened.Conversations.Count == 2 && active.Id == next.Id && active.Draft == "草稿" && reopened.Chat.Single().Content == "第二个问题", "会话或草稿未持久化");
+    ChatConversations.Switch(reopened, id); Check(reopened.Chat.Count == 2 && reopened.Chat[1].Content == "旧回答", "历史对话无法恢复");
+    reopened.Chat.Add(new() { Content = "继续回答" }); database.SaveSession(reopened);
+    var continued = database.GetSession(media.Id)!; continued.Chat.Add(new() { Role = "user", Content = "重开后继续" }); database.SaveSession(continued);
+    Check(database.GetSession(media.Id)!.Chat.Count == 4, "重新读取后当前消息未与活动会话同步");
+    var blank = new MediaSession(); ChatConversations.Ensure(blank); ChatConversations.Create(blank); Check(blank.Conversations.Count == 1, "连续新建产生空记录");
+    var summaryOnly = new MediaSession { Summary = "只有总结" }; ChatConversations.Ensure(summaryOnly); ChatConversations.Create(summaryOnly); ChatConversations.Ensure(summaryOnly);
+    Check(summaryOnly.Conversations.Count == 2 && summaryOnly.Chat.Count == 0, "新对话错误恢复旧总结");
+    try { ChatConversations.Switch(reopened, "another-media"); throw new Exception("接受了其他媒体会话"); } catch (ArgumentException) { }
+}));
+await Test("OOBE recommendations, pinned download plan, cancellation and completion", async () =>
+{
+    const ulong gb = 1024UL * 1024 * 1024;
+    var report = new SetupReport("test", "Arm64", 8, 16 * gb, 10 * gb, 50L * 1024 * 1024 * 1024,
+        [new("integrated", 0x8086, 0, 8 * gb)], 500, [new("ONNX DirectML 运行时", true, "test")], []);
+    Check(FirstRunSetup.Recommend(report, "auto").ModelId == "whisper-turbo", "共享内存设备建议错误");
+    Check(FirstRunSetup.Recommend(report, "en").ModelId == "parakeet-v3", "英语建议错误");
+    var powerful = report with { MemoryBytes = 64 * gb, AvailableMemoryBytes = 32 * gb, Gpus = [new("discrete", 0x10de, 16 * gb, 16 * gb)] };
+    Check(FirstRunSetup.Recommend(powerful, "auto").ModelId == "whisper-large" && FirstRunSetup.Recommend(powerful, "en").ModelId == "whisper-large", "资源充足仍推荐小模型");
+    Check(FirstRunSetup.Recommend(powerful with { DspMillionSamplesPerSecond = 50 }, "auto").ModelId != "whisper-large", "只按显存忽略计算条件");
+    Check(FirstRunSetup.Recommend(powerful with { AvailableMemoryBytes = 3 * gb }, "auto").ModelId == "whisper-small", "可用内存不足仍推荐大模型");
+    Check(FirstRunSetup.Recommend(report, "zh").ModelId != "parakeet-v3", "中文错误推荐英语模型");
+    Check(FirstRunSetup.Recommend(report with { AvailableMemoryBytes = gb }, "auto").ModelId == "whisper-tiny", "忽略可用内存");
+    Check(FirstRunSetup.Recommend(report with { AvailableMemoryBytes = 3 * gb }, "auto").ModelId == "whisper-small", "共享上限冒充可用显存");
+    var whisper = FirstRunSetup.Plan("whisper-small", "auto", true);
+    Check(!whisper.Cuda && whisper.Files.Length == 2 && whisper.Files.All(f => f.Size > 0 && f.Sha256.Length == 64), "Whisper 依赖清单未固定或误下载 ONNX CUDA");
+    var onnx = FirstRunSetup.Plan("parakeet-v3", "en", true); Check(onnx.Cuda && onnx.Files.Length == 1 && onnx.DownloadBytes > onnx.Files[0].Size, "ONNX CUDA 清单错误");
+    try { FirstRunSetup.Plan("parakeet-v3", "zh", true); throw new Exception("中文方案错误接受 Parakeet"); } catch (ArgumentException) { }
+    var paths = new AppPaths(Path.Combine(run, "oobe-state")); Check(FirstRunSetup.NeedsSetup(paths.DataRoot), "新用户未触发引导");
+    await File.WriteAllTextAsync(Path.Combine(paths.DataRoot, "setup-state.json"), "broken"); Check(FirstRunSetup.NeedsSetup(paths.DataRoot), "损坏状态未恢复");
+    using var cancel = new CancellationTokenSource(); cancel.Cancel(); var original = new AppSettings { TranscriptionModelPath = "existing", Language = "zh" };
+    try { await FirstRunSetup.InstallAsync(paths, original, whisper, null, cancel.Token); throw new Exception("忽略取消"); } catch (OperationCanceledException) { }
+    Check(original.TranscriptionModelPath == "existing" && original.Language == "zh" && FirstRunSetup.NeedsSetup(paths.DataRoot), "取消改变设置或完成状态");
+    FirstRunSetup.Complete(paths.DataRoot, "skipped", report); Check(!FirstRunSetup.NeedsSetup(paths.DataRoot), "跳过后重复显示引导");
+});
 await Test("SRT/VTT bilingual round-trip and millisecond timestamps", () => Sync(() =>
 {
     foreach (var format in new[] { "srt", "vtt" })

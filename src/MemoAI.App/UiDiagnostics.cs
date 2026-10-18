@@ -17,6 +17,22 @@ public sealed partial class MainWindow
             var workArea = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(AppWindow.Id, Microsoft.UI.Windowing.DisplayAreaFallback.Nearest).WorkArea;
             result["initialWindowFitsDisplayWorkArea"] = AppWindow.Position.X >= workArea.X && AppWindow.Position.Y >= workArea.Y
                 && AppWindow.Position.X + AppWindow.Size.Width <= workArea.X + workArea.Width && AppWindow.Position.Y + AppWindow.Size.Height <= workArea.Y + workArea.Height;
+            OpenFirstRun(); FirstRunHost.UpdateLayout();
+            result["firstRunWelcomeBlocksWorkspaceWithoutChangingSettings"] = setupOpen && FirstRunHost.Visibility == Visibility.Visible && !Sidebar.IsEnabled && !NavigationBack.IsEnabled && FirstRunSetup.NeedsSetup(paths.DataRoot);
+            await AdvanceFirstRunAsync(); FirstRunHost.UpdateLayout();
+            result["firstRunWorkerHardwareAndDependencyProbe"] = setupStep == 1 && setupReport is { MemoryBytes: > 0, LogicalCores: > 0, DspMillionSamplesPerSecond: > 0 } && setupReport.Dependencies.Count(d => d.Ready) >= 2;
+            result["firstRunTechnicalDetailsAreCollapsedByDefault"] = setupAdvancedOptions?.IsExpanded == false;
+            setupAdvancedOptions!.IsExpanded = true; FirstRunHost.UpdateLayout(); await Task.Delay(400);
+            var expanderContent = Descendants(setupAdvancedOptions).OfType<Microsoft.UI.Xaml.Controls.Border>().Single(n => n.Name == "ExpanderContent");
+            var expanderPaint = Descendants(expanderContent).OfType<ContinuousSurface>().Single(n => n.Name == "G2_ExpanderContent");
+            var paintOrigin = expanderPaint.TransformToVisual(expanderContent).TransformPoint(new(0, 0));
+            result["expanderPaintCoversPaddingWithoutOffset"] = Math.Abs(paintOrigin.X) < .5 && Math.Abs(paintOrigin.Y) < .5 && Math.Abs(expanderPaint.ActualWidth - expanderContent.ActualWidth) < 1;
+            result["expanderContentUsesSharedStretchAndPadding"] = setupAdvancedOptions.HorizontalContentAlignment == HorizontalAlignment.Stretch && setupAdvancedOptions.Padding.Left == 20;
+            result["firstRunProbeDiagnostics"] = setupError.Length > 0 ? setupError : Json.Write(setupReport);
+            setupStep = 2; RenderFirstRun(); FirstRunHost.UpdateLayout();
+            result["firstRunPausedDownloadHasRetryAndKeepsOriginalSettings"] = setupProgressText?.Text.Contains("暂停") == true && settings.TranscriptionModelPath == "";
+            FinishFirstRun("skipped");
+            result["firstRunSkipPersistsAndRestoresWorkspace"] = !setupOpen && Sidebar.IsEnabled && !FirstRunSetup.NeedsSetup(paths.DataRoot);
             ollamaModels = ["test-translation", "test-summary-a", ..Enumerable.Range(0, 12).Select(i => $"fixture-model-{i}"), "test-summary-b"];
             var navigationPassed = true;
             foreach (var (item, page) in new (NavigationViewItem, UIElement)[] { (NavQueue, QueueView), (NavRecord, RecordView), (NavLink, LinkView), (NavModels, ModelStoreView), (NavSettings, SettingsView), (NavLibrary, LibraryView) })
@@ -271,6 +287,11 @@ public sealed partial class MainWindow
             chatScroll?.ChangeView(null, chatScroll.ScrollableHeight, null, true); await Task.Delay(120);
             streamTurn.Content += "\n\n回到底部后继续生成。"; FollowChat(); await Task.Delay(160);
             result["streamingResumesAtBottom"] = followChat && chatScroll is not null && chatScroll.ScrollableHeight - chatScroll.VerticalOffset < 3;
+            var originalConversation = ChatConversations.Ensure(fixture); var originalMessageCount = fixture.Chat.Count;
+            QuestionBox.Text = "保留这个会话的草稿"; await CreateNewChatAsync();
+            result["newChatKeepsOldMessagesAndStartsEmpty"] = fixture.Chat.Count == 0 && fixture.Conversations.Count == 2 && originalConversation.Messages.Count == originalMessageCount && originalConversation.Draft == "保留这个会话的草稿";
+            ChatConversations.Switch(fixture, originalConversation.Id); LoadChat(fixture);
+            result["chatHistoryRestoresMessagesDraftAndStore"] = ReferenceEquals(ChatMessages.ItemsSource, originalConversation.Messages) && QuestionBox.Text == "保留这个会话的草稿" && store.GetSession(fixture.Id)?.Conversations.Count == 2;
             ArrangeWorkspace(); WorkspaceView.UpdateLayout();
             result["wideWorkspaceUsesColumnsAndVideoAspect"] = mediaLayout == "columns" && Grid.GetColumn(TranscriptPane) == 1 && Math.Abs(Player.ActualWidth / Player.ActualHeight - videoAspect) < .05 && SubtitleList.ActualHeight > Player.ActualHeight;
             AppWindow.Resize(new Windows.Graphics.SizeInt32(1320, 900)); await Task.Delay(180); ArrangeWorkspace();

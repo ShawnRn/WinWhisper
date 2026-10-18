@@ -99,12 +99,13 @@ public sealed partial class MainWindow : Window
             var test = args.FirstOrDefault(a => a.StartsWith("--import="));
             if (test is not null) _ = SafeAsync(() => ImportPathsAsync([test[9..]]));
             if (args.Contains("--ui-self-test")) _ = RunUiSelfTestAsync();
+            else if (FirstRunSetup.NeedsSetup(paths.DataRoot)) OpenFirstRun();
         };
     }
     private KeyboardAccelerator Accelerator(VirtualKey key, VirtualKeyModifiers modifiers, Action<object, RoutedEventArgs> action)
     {
         var accelerator = new KeyboardAccelerator { Key = key, Modifiers = modifiers };
-        accelerator.Invoked += (_, e) => { action(this, new RoutedEventArgs()); e.Handled = true; }; return accelerator;
+        accelerator.Invoked += (_, e) => { if (!setupOpen) action(this, new RoutedEventArgs()); e.Handled = true; }; return accelerator;
     }
     private void MediaOpened(MediaPlayer sender, object args)
     {
@@ -131,6 +132,7 @@ public sealed partial class MainWindow : Window
         closing = true; playbackTimer.Stop(); saveTimer.Stop(); noticeTimer.Stop(); recordingTimer.Stop(); aiCancellation?.Cancel(); linkCancellation?.Cancel();
         foreach (var cancellation in modelDownloads.Values) cancellation.Cancel();
         cudaRuntimeDownload?.Cancel();
+        setupCancellation?.Cancel();
         liveRecordingStop?.Cancel(); recordingClipStop?.Cancel();
         try { await SaveCurrentAsync(); await scheduler.DisposeAsync(); provider?.Dispose(); if (recorder is not null) await FinishRecordingAsync(); }
         catch (Exception ex) { File.AppendAllText(Path.Combine(paths.DataRoot, "shutdown.log"), ex + "\n"); }
@@ -330,9 +332,10 @@ public sealed partial class MainWindow : Window
     private void LibrarySearch_Changed(object sender, TextChangedEventArgs e) { if (sessions is not null) RefreshLibrary(); }
     private void FolderFilter_Changed(object sender, SelectionChangedEventArgs e) { if (!loading && sessions is not null) RefreshLibrary(); }
     private void SubtitleSearch_Changed(object sender, TextChangedEventArgs e) => RefreshSubtitles();
-    private void Root_DragOver(object sender, DragEventArgs e) => e.AcceptedOperation = DataPackageOperation.Copy;
+    private void Root_DragOver(object sender, DragEventArgs e) => e.AcceptedOperation = setupOpen ? DataPackageOperation.None : DataPackageOperation.Copy;
     private async void Root_Drop(object sender, DragEventArgs e)
     {
+        if (setupOpen) return;
         if (e.DataView.Contains(StandardDataFormats.StorageItems)) await SafeAsync(async () => await ImportPathsAsync((await e.DataView.GetStorageItemsAsync()).OfType<StorageFile>().Select(f => f.Path)));
     }
     private void RequireSession() { if (current is null) throw new InvalidOperationException("请先导入或打开一段媒体。"); }

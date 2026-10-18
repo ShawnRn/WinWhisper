@@ -1,7 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework>
-    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-arm64</RuntimeIdentifier><AssemblyName>MemoAI.Worker</AssemblyName>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-arm64</RuntimeIdentifier><AssemblyName>WinWhisper.Worker</AssemblyName>
+    <Product>WinWhisper</Product><Title>WinWhisper Worker</Title><Description>WinWhisper background inference and setup</Description>
+    <Authors>Shawn Rain</Authors><Version>0.1.0-preview.2-dev</Version>
+    <ApplicationIcon>../MemoAI.App/Assets/Brand/WinWhisper.ico</ApplicationIcon>
     <ApplicationManifest>worker.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../MemoAI.Core/MemoAI.Core.csproj" /></ItemGroup>

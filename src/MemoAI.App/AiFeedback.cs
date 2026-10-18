@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using MemoAI.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -51,6 +52,12 @@ public sealed partial class MainWindow
         MoreAiTools.IsEnabled = available;
         ChatEditMode.IsEnabled = !aiBusy && !reviewing;
         TranscriptHistoryButton.IsEnabled = !aiBusy && !reviewing && !transcribing && current is not null;
+        NewChatButton.IsEnabled = ChatHistoryButton.IsEnabled = !aiBusy && !reviewing && current is not null;
     }
-    private void Question_Changed(object sender, TextChangedEventArgs e) => UpdateAiAvailability();
+    private void Question_Changed(object sender, TextChangedEventArgs e)
+    {
+        if (!loadingConversation && current is not null)
+        { ChatConversations.Ensure(current).Draft = QuestionBox.Text; Dirty(); }
+        UpdateAiAvailability();
+    }
 }

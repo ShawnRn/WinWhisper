@@ -12,19 +12,22 @@ namespace MemoAI.App;
 public sealed partial class MainWindow
 {
     private ScrollViewer? chatScroll;
-    private bool followChat = true, chatScrollPending, questionComposing;
+    private bool followChat = true, chatScrollPending, questionComposing, loadingConversation;
     private double chatLastOffset, chatLastExtent;
     private void LoadChat(MediaSession session)
     {
-        if (session.Chat.Count == 0 && !string.IsNullOrWhiteSpace(session.Summary))
-            session.Chat.Add(new() { Role = "assistant", Content = ChineseTypography.Apply(session.Summary), Status = "已保存的内容总结" });
+        var conversation = ChatConversations.Ensure(session);
         foreach (var turn in session.Chat.Where(t => t.Role == "assistant")) turn.Content = ChineseTypography.Apply(turn.Content);
         ChatMessages.ItemsSource = session.Chat; followChat = true; ShowChat(); FollowChat();
+        loadingConversation = true;
+        try { QuestionBox.Text = conversation.Draft; } finally { loadingConversation = false; }
+        ToolTipService.SetToolTip(ChatHistoryButton, "历史对话 · " + conversation.Title);
     }
     private ChatTurn BeginChatResponse(MediaSession session, string operation, string question)
     {
         session.Chat.Add(new() { Role = "user", Content = operation == "ask" ? question : operation switch { "summary" => "请总结这段内容。", "translate" => "请翻译字幕。", "chapters" => "请按时间生成章节目录。", "mindmap" => "请生成思维导图。", _ => "请校对字幕。" } });
         var response = new ChatTurn { Role = "assistant", Content = "", Status = "等待本地模型…" }; session.Chat.Add(response);
+        ChatConversations.Ensure(session).UpdatedAt = DateTimeOffset.Now;
         if (operation == "ask") QuestionBox.Text = "";
         followChat = true; FollowChat(); return response;
     }

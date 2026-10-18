@@ -52,6 +52,8 @@ public partial class MediaSession : ObservableObject
     public double Duration { get; set; }
     public TranscriptionOptions? Transcription { get; set; }
     public ObservableCollection<ChatTurn> Chat { get; set; } = [];
+    public List<ChatConversation> Conversations { get; set; } = [];
+    public string ActiveConversationId { get; set; } = "";
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.Now;
     public ObservableCollection<SubtitleSegment> Segments { get; set; } = [];

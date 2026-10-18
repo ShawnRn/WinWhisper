@@ -5,6 +5,12 @@ Console.InputEncoding = Encoding.UTF8;
 Console.OutputEncoding = new UTF8Encoding(false);
 try
 {
+    if (args is ["--setup-probe", var setupEngines, var setupModels, var setupData])
+    {
+        var setupPaths = new AppPaths(setupData, setupEngines) { ModelRoot = setupModels };
+        Console.WriteLine(Json.Write(await FirstRunSetup.InspectAsync(setupPaths, CancellationToken.None)));
+        return;
+    }
     var line = await Console.In.ReadLineAsync() ?? throw new InvalidDataException("缺少任务请求。");
     var request = Json.Read<JobRequest>(line);
     var paths = new AppPaths(engineRoot: string.IsNullOrWhiteSpace(request.Settings.EngineRoot) ? null : request.Settings.EngineRoot);

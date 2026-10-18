@@ -12,6 +12,11 @@ namespace MemoAI.App;
 // and BorderBrush without ever replacing the properties controlled by WinUI/VSM.
 public sealed class ContinuousSurface : ContentControl
 {
+    public static readonly DependencyProperty InsetOwnerProperty = DependencyProperty.Register(nameof(InsetOwner), typeof(FrameworkElement), typeof(ContinuousSurface), new PropertyMetadata(null, (d, _) => ((ContinuousSurface)d).ObserveInsets()));
+    public FrameworkElement? InsetOwner { get => (FrameworkElement?)GetValue(InsetOwnerProperty); set => SetValue(InsetOwnerProperty, value); }
+    private FrameworkElement? observedInsetOwner;
+    private DependencyProperty? insetPaddingProperty, insetBorderProperty;
+    private long insetPaddingToken, insetBorderToken;
     private Border? fill;
     private Grid? strokeHost;
     private ContinuousPaintBrush? paint;
@@ -37,8 +42,36 @@ public sealed class ContinuousSurface : ContentControl
         RegisterPropertyChangedCallback(BorderThicknessProperty, (_, _) => UpdateStroke());
         RegisterPropertyChangedCallback(CornerRadiusProperty, (_, _) => Refresh());
         SizeChanged += (_, _) => Refresh();
-        Loaded += (_, _) => { observedRoot = XamlRoot; observedScale = observedRoot?.RasterizationScale ?? 1; if (observedRoot is not null) observedRoot.Changed += RootChanged; ObserveStroke(); Refresh(); };
-        Unloaded += (_, _) => { if (observedRoot is not null) observedRoot.Changed -= RootChanged; observedRoot = null; DetachStroke(); };
+        Loaded += (_, _) => { observedRoot = XamlRoot; observedScale = observedRoot?.RasterizationScale ?? 1; if (observedRoot is not null) observedRoot.Changed += RootChanged; ObserveInsets(); ObserveStroke(); Refresh(); };
+        Unloaded += (_, _) => { if (observedRoot is not null) observedRoot.Changed -= RootChanged; observedRoot = null; DetachInsets(); DetachStroke(); };
+    }
+    private void DetachInsets()
+    {
+        if (observedInsetOwner is not null)
+        {
+            if (insetPaddingProperty is not null) observedInsetOwner.UnregisterPropertyChangedCallback(insetPaddingProperty, insetPaddingToken);
+            if (insetBorderProperty is not null) observedInsetOwner.UnregisterPropertyChangedCallback(insetBorderProperty, insetBorderToken);
+        }
+        observedInsetOwner = null; insetPaddingProperty = insetBorderProperty = null;
+    }
+    private void ObserveInsets()
+    {
+        DetachInsets();
+        if (InsetOwner is not (Grid or Border)) return;
+        observedInsetOwner = InsetOwner;
+        insetPaddingProperty = InsetOwner is Grid ? Grid.PaddingProperty : Border.PaddingProperty;
+        insetBorderProperty = InsetOwner is Grid ? Grid.BorderThicknessProperty : Border.BorderThicknessProperty;
+        insetPaddingToken = observedInsetOwner.RegisterPropertyChangedCallback(insetPaddingProperty, (_, _) => UpdateInsets());
+        insetBorderToken = observedInsetOwner.RegisterPropertyChangedCallback(insetBorderProperty, (_, _) => UpdateInsets());
+        UpdateInsets();
+    }
+    private void UpdateInsets()
+    {
+        if (observedInsetOwner is null || insetPaddingProperty is null || insetBorderProperty is null) return;
+        var p = (Thickness)observedInsetOwner.GetValue(insetPaddingProperty); var b = (Thickness)observedInsetOwner.GetValue(insetBorderProperty);
+        var margin = new Thickness(-p.Left - b.Left, -p.Top - b.Top, -p.Right - b.Right, -p.Bottom - b.Bottom);
+        // Only the generated paint child's inset is owned here. Native layout, named parts and VSM brushes stay intact.
+        if (!Margin.Equals(margin)) Margin = margin;
     }
     protected override void OnApplyTemplate()
     {

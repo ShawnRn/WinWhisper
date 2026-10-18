@@ -9,6 +9,7 @@
 
    <Style TargetType="TextBlock"><Setter Property="FontFamily" Value="{StaticResource ContentControlThemeFontFamily}"/><Setter Property="FontSize" Value="14"/></Style>
    <Style TargetType="TextBox" BasedOn="{StaticResource DefaultTextBoxStyle}"><Setter Property="FontFamily" Value="{StaticResource ContentControlThemeFontFamily}"/><Setter Property="FontSize" Value="14"/></Style>
+   <Style TargetType="Expander" BasedOn="{StaticResource DefaultExpanderStyle}"><Setter Property="HorizontalAlignment" Value="Stretch"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="VerticalAlignment" Value="Top"/><Setter Property="MinWidth" Value="0"/><Setter Property="Padding" Value="20,18"/><Setter Property="CornerRadius" Value="12"/><Setter Property="FontFamily" Value="{StaticResource ContentControlThemeFontFamily}"/><Setter Property="FontSize" Value="14"/></Style>
    <ControlTemplate x:Key="ContinuousSurfaceTemplate" TargetType="ui:ContinuousSurface">
     <Grid Background="Transparent">
      <Border x:Name="FillSurface" IsHitTestVisible="False"/>

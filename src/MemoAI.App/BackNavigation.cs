@@ -31,13 +31,13 @@ public sealed partial class MainWindow
     }
     private void UpdateHistoryButtons()
     {
-        NavigationBack.IsEnabled = navigationHistory.Count > 0;
+        NavigationBack.IsEnabled = !setupOpen && navigationHistory.Count > 0;
     }
     private async void Back_Click(object sender, RoutedEventArgs e) => await SafeAsync(() => NavigateHistoryAsync(false));
     private async void Forward_Click(object sender, RoutedEventArgs e) => await SafeAsync(() => NavigateHistoryAsync(true));
     private async Task NavigateHistoryAsync(bool forward)
     {
-        if (navigatingHistory) return;
+        if (navigatingHistory || setupOpen) return;
         navigatingHistory = true; navigationDirection = forward ? 1 : -1;
         try
         {

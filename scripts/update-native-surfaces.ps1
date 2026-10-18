@@ -63,6 +63,7 @@ function Test-TemplateScope($node,$template){
 }
 foreach($style in $styles){
     $clone=$output.ImportNode($style,$true)
+    if($clone.GetAttribute('Key',$xns) -eq 'ExpanderHeaderPadding'){$clone.InnerText='20,0,8,0'}
     foreach($template in @($clone.SelectNodes('.//*') | Where-Object {$_.LocalName -eq 'ControlTemplate'})){
         $map=@{}
         # Keep the original named parts and their CLR types: WinUI's code uses them.
@@ -108,7 +109,7 @@ foreach($style in $styles){
                 # The paint child spans the grid and extends over its original border inset.
                 $surface.SetAttribute('Grid.RowSpan',[string][Math]::Max(1,@($node.ChildNodes | Where-Object {$_.LocalName -eq 'Grid.RowDefinitions'} | ForEach-Object {$_.ChildNodes | Where-Object {$_.LocalName -eq 'RowDefinition'}}).Count))
                 $surface.SetAttribute('Grid.ColumnSpan',[string][Math]::Max(1,@($node.ChildNodes | Where-Object {$_.LocalName -eq 'Grid.ColumnDefinitions'} | ForEach-Object {$_.ChildNodes | Where-Object {$_.LocalName -eq 'ColumnDefinition'}}).Count))
-                $surface.SetAttribute('Margin','{Binding BorderThickness, ElementName='+$name+', Converter={StaticResource NativeNegativeThickness}}')
+                $surface.SetAttribute('InsetOwner','{Binding ElementName='+$name+'}')
                 $node.SetAttribute('Background','Transparent');$node.RemoveAttribute('BorderBrush');$node.SetAttribute('CornerRadius','0')
                 $firstChild=$node.ChildNodes | Where-Object {$_ -is [Xml.XmlElement] -and !$_.LocalName.Contains('.')} | Select-Object -First 1
                 if($firstChild){[void]$node.InsertBefore($surface,$firstChild)}else{[void]$node.AppendChild($surface)}
@@ -117,7 +118,7 @@ foreach($style in $styles){
             }
             if($node.LocalName -eq 'Border'){
                 $node.SetAttribute('Background','Transparent');$node.RemoveAttribute('BorderBrush');$node.SetAttribute('CornerRadius','0')
-                $surface.SetAttribute('Margin','{Binding BorderThickness, ElementName='+$name+', Converter={StaticResource NativeNegativeThickness}}')
+                $surface.SetAttribute('InsetOwner','{Binding ElementName='+$name+'}')
                 $content=$node.ChildNodes | Where-Object {$_ -is [Xml.XmlElement] -and !$_.LocalName.Contains('.')} | Select-Object -First 1
                 if($content){
                     $layer=$output.CreateElement('Grid',$ns);[void]$node.ReplaceChild($layer,$content);[void]$layer.AppendChild($surface);[void]$layer.AppendChild($content)

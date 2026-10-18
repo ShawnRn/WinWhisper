@@ -5,7 +5,7 @@ Read [workflows/README.md](workflows/README.md) for the development, native UI, 
 ## Product and architecture
 
 - The product is **WinWhisper**, an independent Windows 11 local media, transcription, subtitle and AI workspace. Do not copy code or resources out of the Memo installer.
-- Retain the current `MemoAI.*` project/namespace identifiers and `%LOCALAPPDATA%/MemoAI.Native` data directory unless implementing an explicit, tested migration. The app executable and visible brand are `WinWhisper`.
+- Retain the current `MemoAI.*` project/namespace identifiers and `%LOCALAPPDATA%/MemoAI.Native` data directory unless implementing an explicit, tested migration. App and owned background executable names / metadata use `WinWhisper` and `WinWhisper.Worker`; preserve upstream engine names and notices.
 
 - Build a real Windows ARM64 and x64 WinUI 3 desktop application; do not replace the UI with a web application.
 - Keep media, inference, and model downloads off the UI thread. Run native inference in separate processes.
@@ -42,7 +42,10 @@ Read [workflows/README.md](workflows/README.md) for the development, native UI, 
 
 - Model store entries must declare the actual engine, languages, architecture/backend constraints, source and license. Downloading and applying are separate validated steps; detect missing/incompatible files before starting inference.
 - Keep model downloads explicit and show size/progress/cancel. Preserve resumable downloads and completed task stages. Never present a CPU-only runtime as CUDA-accelerated.
-- Model and optional inference-runtime downloads belong in the model store. Settings may configure parameters, services and existing paths, but must not duplicate download controls.
+- Model and optional inference-runtime downloads belong in the model store and explicit first-run setup. Settings may configure parameters, services and existing paths, or reopen setup, but must not duplicate download controls.
+- First-run setup uses an isolated, cancellable Worker for hardware / dependency checks and a bounded CPU DSP estimate. Do not report a generic CPU test or GPU memory capacity as measured ASR speed / verified GPU acceleration. Display pinned download sizes / sources, retain resume files, and commit model settings only after selected components finish. Save per-user completion or explicit skip; an interrupted setup must remain resumable.
+- Keep first-run defaults simple: language, a recommended plan, download size and one preparation action. Put hardware, manual model / backend choices and dependency details in collapsed advanced options. Prefer the highest-quality compatible transcription model when memory, available capacity and compute estimates allow, without adding shared GPU memory to physical RAM.
+- Chat conversations belong to one media session. Migrate legacy Chat / Summary exactly once, preserve independent history and drafts, block switching during generation / review, and never remove pending subtitle proposals when starting a conversation.
 - GPU-intensive work is serialized by default. Keep decoding and inference outside the UI thread and isolate native crashes in workers.
 - ONNX ASR models use versioned `.asr.json` installation records and the pinned catalog in `AsrModels.cs`. Never route an arbitrary `.onnx` file to Whisper, guess a model family, or apply a partially extracted model. Retain model-specific language and license limits.
 - Live recording sends finalized PCM clips to a persistent worker. Keep offsets relative to the recording, preserve audio if inference fails, and retain the single GPU gate. COM process-loopback callbacks must be publicly COM-visible and agile; completion signals used by capture disposal must run continuations asynchronously.

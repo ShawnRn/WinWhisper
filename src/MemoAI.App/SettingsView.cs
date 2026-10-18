@@ -22,6 +22,8 @@ public sealed partial class MainWindow
         SettingsContent.Children.Add(save);
         var openStore = new Button { FontFamily = SettingsFont, Content = "模型商店", HorizontalAlignment = HorizontalAlignment.Left };
         openStore.Click += ModelStore_Click; SettingsContent.Children.Add(openStore);
+        var firstRun = new Button { Content = "设备检测与首次设置", HorizontalAlignment = HorizontalAlignment.Left };
+        firstRun.Click += (_, _) => OpenFirstRun(); SettingsContent.Children.Add(firstRun);
         var transcription = SettingsSection("转写与硬件加速", "自动模式优先 CUDA；Whisper / GGUF 回退到 Vulkan，ONNX 回退到 DirectML，最后尝试 CPU。任务历史记录实际后端。GPU 运行时在模型商店管理。");
         Choice(transcription, "计算后端", new[] { "自动选择 GPU", "CUDA", "Vulkan（Whisper / GGUF）", "CPU", "DirectML（ONNX；Whisper / GGUF 使用 Vulkan）" }, (int)settings.Backend, i => settings.Backend = (ComputeBackend)i);
         TextSetting(transcription, "默认转写模型（在模型商店切换）", TranscriptionEngines.ModelName(settings.TranscriptionModelPath), _ => { }).IsReadOnly = true;

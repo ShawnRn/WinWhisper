@@ -25,6 +25,7 @@ function Copy-Tree([string]$Source,[string]$Destination){
     foreach($file in Get-ChildItem -LiteralPath $Source -File -Recurse){
         if($file.Attributes -band [IO.FileAttributes]::ReparsePoint){throw "Refuse reparse-point payload: $($file.FullName)"}
         if($file.Extension -in '.pdb','.log','.db','.pfx','.key'){continue}
+        if($file.Name -like 'MemoAI.Worker.*'){continue} # Ignore stale outputs predating the process-brand migration.
         if($file.Extension -in '.onnx','.gguf' -or $file.Name -like 'ggml-*.bin'){throw 'Model weights must not be bundled in an installer'}
         $relative=[IO.Path]::GetRelativePath($Source,$file.FullName)
         $target=Join-Path $Destination $relative
@@ -62,6 +63,8 @@ if(!$ExistingStage){
         Copy-Tree $app $destination
         Copy-Tree (Join-Path $root "artifacts/$rid/worker") (Join-Path $destination 'worker')
         if($rid -eq 'win-arm64'){Copy-Tree (Join-Path $root 'artifacts/win-x64/worker') (Join-Path $destination 'worker-x64')}
+        if(!(Test-Path -LiteralPath (Join-Path $destination 'worker/WinWhisper.Worker.exe'))){throw "Missing renamed native Worker: $rid; rebuild with scripts/build.ps1"}
+        if($rid -eq 'win-arm64' -and !(Test-Path -LiteralPath (Join-Path $destination 'worker-x64/WinWhisper.Worker.exe'))){throw 'Missing renamed x64 GPU Worker; publish win-x64 before packaging'}
         foreach($engine in 'whisper-cpu','whisper-cuda','whisper-vulkan','ffmpeg','deno','yt-dlp','llama-cpu','llama-cuda','llama-cuda-runtime','llama-vulkan','sherpa-directml'){
             Copy-Tree (Join-Path $root "engines/$rid/$engine") (Join-Path $destination "engines/$rid/$engine")
         }

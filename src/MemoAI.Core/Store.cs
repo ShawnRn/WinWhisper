@@ -25,6 +25,7 @@ public sealed partial class Store
     private SqliteConnection Open() { var c = new SqliteConnection(connectionString); c.Open(); return c; }
     public void SaveSession(MediaSession session, bool recordVersion = true)
     {
+        if (session.Conversations.Count > 0) ChatConversations.Ensure(session);
         session.UpdatedAt = DateTimeOffset.Now;
         using var c = Open(); using var cmd = c.CreateCommand();
         cmd.CommandText = "INSERT INTO sessions VALUES($id,$title,$folder,$updated,$payload) ON CONFLICT(id) DO UPDATE SET title=excluded.title,folder=excluded.folder,updated=excluded.updated,payload=excluded.payload";
@@ -39,14 +40,20 @@ public sealed partial class Store
         cmd.CommandText = "SELECT payload FROM sessions WHERE ($search='' OR instr(lower(title),lower($search))>0 OR instr(lower(payload),lower($search))>0) AND ($folder IS NULL OR folder=$folder) ORDER BY updated DESC";
         cmd.Parameters.AddWithValue("$search", search); cmd.Parameters.AddWithValue("$folder", (object?)folder ?? DBNull.Value);
         using var reader = cmd.ExecuteReader(); var result = new List<MediaSession>();
-        while (reader.Read()) result.Add(Json.Read<MediaSession>(reader.GetString(0)));
+        while (reader.Read()) result.Add(ReadSession(reader.GetString(0)));
         return result;
     }
     public MediaSession? GetSession(string id)
     {
         using var c = Open(); using var cmd = c.CreateCommand();
         cmd.CommandText = "SELECT payload FROM sessions WHERE id=$id"; cmd.Parameters.AddWithValue("$id", id);
-        return cmd.ExecuteScalar() is string payload ? Json.Read<MediaSession>(payload) : null;
+        return cmd.ExecuteScalar() is string payload ? ReadSession(payload) : null;
+    }
+    private static MediaSession ReadSession(string payload)
+    {
+        var session = Json.Read<MediaSession>(payload);
+        if (session.Conversations.Count > 0) ChatConversations.Ensure(session);
+        return session;
     }
     public void DeleteSession(string id)
     {

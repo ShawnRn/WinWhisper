@@ -77,18 +77,18 @@ public static class SherpaRuntimes
         {
             Path.Combine(AppContext.BaseDirectory, "worker-x64"),
             Path.GetFullPath(Path.Combine(paths.EngineRoot, "..", "artifacts", runtime.Rid, "worker"))
-        }.FirstOrDefault(p => File.Exists(Path.Combine(p, "MemoAI.Worker.exe"))) ?? throw new FileNotFoundException("缺少 x64 GPU 兼容 Worker，请重新安装完整的 WinWhisper。");
-        PeArchitecture.RequireCompatible(Path.Combine(source, "MemoAI.Worker.exe"), runtime.Rid);
+        }.FirstOrDefault(p => File.Exists(Path.Combine(p, "WinWhisper.Worker.exe"))) ?? throw new FileNotFoundException("缺少 x64 GPU 兼容 Worker，请重新安装完整的 WinWhisper。");
+        PeArchitecture.RequireCompatible(Path.Combine(source, "WinWhisper.Worker.exe"), runtime.Rid);
         var libraries = runtime.Directories.SelectMany(p => Directory.GetFiles(p, "*.dll", SearchOption.AllDirectories))
             .GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase).Select(g => g.OrderByDescending(f => new FileInfo(f).Length).First()).ToArray();
         foreach (var required in runtime.Provider == "cuda" ? new[] { "sherpa-onnx-c-api.dll", "onnxruntime.dll", "onnxruntime_providers_cuda.dll", "cudnn64_9.dll", "cublas64_13.dll" } : ["sherpa-onnx-c-api.dll", "onnxruntime.dll", "DirectML.dll"])
             if (!libraries.Any(f => Path.GetFileName(f).Equals(required, StringComparison.OrdinalIgnoreCase))) throw new FileNotFoundException("GPU 运行时不完整，缺少 " + required);
         foreach (var library in libraries) PeArchitecture.RequireCompatible(library, runtime.Rid);
         var version = typeof(SherpaRuntimes).Assembly.ManifestModule.ModuleVersionId.ToString("N");
-        var workerHash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(source, "MemoAI.Worker.exe"))));
+        var workerHash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(source, "WinWhisper.Worker.exe"))));
         var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(version + workerHash + string.Join('|', libraries.Select(f => f + new FileInfo(f).Length + File.GetLastWriteTimeUtc(f).Ticks)))))[..20];
         var destination = Path.Combine(paths.DataRoot, "gpu-workers", runtime.Rid, runtime.Provider, fingerprint);
-        if (File.Exists(Path.Combine(destination, "ready.json"))) return Path.Combine(destination, "MemoAI.Worker.exe");
+        if (File.Exists(Path.Combine(destination, "ready.json"))) return Path.Combine(destination, "WinWhisper.Worker.exe");
         var staging = destination + "-" + Guid.NewGuid().ToString("N"); Directory.CreateDirectory(staging);
         try
         {
@@ -101,7 +101,7 @@ public static class SherpaRuntimes
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!); Directory.Move(staging, destination);
         }
         finally { if (Directory.Exists(staging)) Directory.Delete(staging, true); }
-        return Path.Combine(destination, "MemoAI.Worker.exe");
+        return Path.Combine(destination, "WinWhisper.Worker.exe");
     }
 
     public static string Provider => Environment.GetEnvironmentVariable("WINWHISPER_ONNX_PROVIDER") is "cuda" ? "cuda" : Environment.GetEnvironmentVariable("WINWHISPER_ONNX_PROVIDER") is "directml" ? "directml" : "cpu";

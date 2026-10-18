@@ -41,6 +41,19 @@ public static class Processes
 
 public sealed class WorkerClient(AppPaths paths)
 {
+    public static string FindExecutable(AppPaths paths)
+    {
+        var candidates = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "worker", "WinWhisper.Worker.exe"),
+            Path.Combine(AppContext.BaseDirectory, "WinWhisper.Worker.exe"),
+            Path.Combine(paths.EngineRoot, "..", "artifacts", AppPaths.Rid, "worker", "WinWhisper.Worker.exe")
+        };
+        var worker = candidates.Select(Path.GetFullPath).FirstOrDefault(File.Exists)
+            ?? throw new FileNotFoundException("缺少 WinWhisper 后台程序，请修复或重新安装 WinWhisper。");
+        PeArchitecture.RequireCompatible(worker);
+        return worker;
+    }
     public Task RunAsync(JobRequest request, Func<JobEvent, Task> onEvent, CancellationToken ct) => RunCoreAsync(request, onEvent, ct, null);
     public Task RunLiveAsync(JobRequest request, System.Threading.Channels.ChannelReader<LiveAudioClip> clips, Func<JobEvent, Task> onEvent, CancellationToken ct) => RunCoreAsync(request, onEvent, ct,
         async (input, token) => { await foreach (var clip in clips.ReadAllAsync(token)) { await input.WriteLineAsync(Json.Write(clip)); await input.FlushAsync(token); } });
@@ -86,15 +99,7 @@ public sealed class WorkerClient(AppPaths paths)
         var finalOutput = request.Operation == "tts" ? request.OutputPath ?? Path.Combine(request.WorkDirectory, "dub.wav") : null;
         var stagedOutput = finalOutput is null ? null : finalOutput + "." + Guid.NewGuid().ToString("N") + ".unverified.wav";
         if (stagedOutput is not null) request = request with { OutputPath = stagedOutput };
-        var candidates = new[]
-        {
-            Path.Combine(AppContext.BaseDirectory, "worker", "MemoAI.Worker.exe"),
-            Path.Combine(AppContext.BaseDirectory, "MemoAI.Worker.exe"),
-            Path.Combine(paths.EngineRoot, "..", "artifacts", AppPaths.Rid, "worker", "MemoAI.Worker.exe")
-        };
-        var worker = candidates.Select(Path.GetFullPath).FirstOrDefault(File.Exists)
-            ?? throw new FileNotFoundException("未找到后台工作程序，请运行 scripts/build.ps1。");
-        PeArchitecture.RequireCompatible(worker);
+        var worker = FindExecutable(paths);
         if (runtime is not null) worker = await Task.Run(() => SherpaRuntimes.PrepareWorker(paths, runtime, worker), ct);
         var start = new ProcessStartInfo(worker) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
         start.Environment["WINWHISPER_ONNX_PROVIDER"] = runtime?.Provider ?? "cpu";

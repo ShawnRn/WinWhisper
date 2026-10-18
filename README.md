@@ -12,6 +12,8 @@
 
 源码还提供英语 uh / um 自动清理、上下文标点恢复、全文字幕 Agent，以及持久版本 / Diff / 允许与拒绝 / 回滚。使用说明见 [字幕 Agent 与版本](workflows/transcript-agent.md)，这些功能尚未重新打包到上述安装程序。
 
+开发版还加入首次启动引导：本地检测 CPU / 内存 / 显卡、短时 CPU 运算测试、按素材语言推荐模型，以及明确确认后的模型 / 可选 CUDA 依赖下载；可跳过并从设置重新进入。自有后台进程名统一为 `WinWhisper.Worker`。聊天支持当前媒体下新建独立对话、搜索和恢复历史对话与草稿。详见 [首次设置](workflows/first-run.md)。这些改动不包含在 Preview 1 下载中。
+
 | 安装程序 | 适用设备 |
 |---|---|
 | [Universal](https://github.com/ShawnRn/WinWhisper/releases/download/v0.1.0-preview.1/WinWhisper-0.1.0-preview.1-Universal-Setup.exe) | 自动选择 ARM64 / x64，包含两套离线负载 |
@@ -30,7 +32,7 @@
 - 使用 whisper.cpp 在 CUDA、Vulkan、CPU 之间选择，显示实际后端、设备、耗时和进度；按媒体保存语言、模型及细分参数。
 - 模型商店包含 Parakeet v2 / v3 / 日语版、SenseVoice Small、Paraformer、FunASR Nano、Qwen3-ASR 的 ONNX 包，支持校验下载、解压、应用及检查点。ONNX 自动尝试 CUDA → DirectML → CPU，按执行记录确认 GPU；ARM64 的 CUDA 使用独立 x64 兼容 Worker。不同量化版本的限制见 [GPU 支持](docs/GPU.md)。
 - 商店按转写、翻译与对话、配音、语音辅助四种用途分开浏览，默认只显示转写模型；搜索和已下载筛选针对当前分类。
-- 模型下载与应用统一在商店完成；设置页只保留参数、服务和已有文件路径配置。
+- 日常模型下载与应用在商店完成，首次引导可一键准备推荐模型；设置页保留参数、服务、已有路径和重新进入引导的入口。
 - 播放、定位、搜索和编辑双语字幕，调整时间、拆分合并及撤销；媒体库支持列表和缩略图。
 - 通过 Ollama 或应用管理的 llama.cpp 翻译、总结、校对、生成章节和思维导图，并围绕内容多轮提问。聊天支持原生 Markdown、流式跟随和可点击时间引用。
 - 英语断句保留可用词时间戳，恢复 Whisper VAD 的实测时间映射，结合原音频停顿与分句起点，保护数字和单位搭配；可选本地 AI 恢复标点，拒绝改词或漏词。旧字幕没有可靠词时间戳时保留整段时间，重新转写可使用修复后的对齐。
