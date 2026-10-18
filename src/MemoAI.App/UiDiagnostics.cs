@@ -159,6 +159,11 @@ public sealed partial class MainWindow
             var diffRows = ((StackPanel)wordDiffView.Content).Children.OfType<RichTextBlock>().ToArray();
             var afterRuns = diffRows[1].Blocks.OfType<Microsoft.UI.Xaml.Documents.Paragraph>().Single().Inlines.OfType<Microsoft.UI.Xaml.Documents.Run>().ToArray();
             result["wordDiffKeepsUnchangedContextInNormalColor"] = afterRuns.Any(r => r.Text == "we are at " && r.ReadLocalValue(Microsoft.UI.Xaml.Documents.TextElement.ForegroundProperty) == DependencyProperty.UnsetValue) && afterRuns.Any(r => r.Text == "SpaceX" && r.ReadLocalValue(Microsoft.UI.Xaml.Documents.TextElement.ForegroundProperty) != DependencyProperty.UnsetValue);
+            var translationBefore = new SubtitleSegment { Id = "translation-diff", Text = "Original transcript.", Start = 1, End = 2 };
+            var translationAfter = translationBefore.Copy(); translationAfter.Translation = "新增译文";
+            var translationView = new TranscriptDiffView { Diff = TranscriptDiff.Build([translationBefore], [translationAfter]).Single() };
+            var translationRows = ((StackPanel)translationView.Content).Children;
+            result["translationDiffShowsOriginalOnceAndOnlyComparesTranslation"] = translationRows.OfType<TextBlock>().Single().Text == translationBefore.Text && translationRows.OfType<RichTextBlock>().Count() == 1 && string.Concat(translationRows.OfType<RichTextBlock>().Single().Blocks.OfType<Microsoft.UI.Xaml.Documents.Paragraph>().Single().Inlines.OfType<Microsoft.UI.Xaml.Documents.Run>().Select(r => r.Text)) == "+ 新增译文";
             result["transcriptPreviewShowsCompleteBeforeAndAfterWithoutApplying"] = editPreview.Children.OfType<Pivot>().Single().Items.Count == 3 && fixture.Segments[0].Text == editBefore[0].Text;
             var inlineRevision = store.CreateTranscriptProposal(fixture, editBefore, editAfter, "inline fixture");
             var inlineReview = PreviewTranscriptAsync(fixture, editBefore, editAfter, "inline fixture", "fixture", revision: inlineRevision);

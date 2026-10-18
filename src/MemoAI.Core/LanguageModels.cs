@@ -119,12 +119,23 @@ public sealed class AiService(ILocalLanguageModelProvider provider, AppSettings 
         {
             ct.ThrowIfCancellationRequested();
             var segment = segments[i];
-            var system = $"你是专业字幕译者。将用户提供的字幕翻译成{settings.TargetLanguage}。只输出该句译文，不要解释、添加引号或重复原文。保留人名、产品名、数字及语气。术语表：\n{settings.Glossary}";
+            var system = $"你是专业字幕译者。将用户提供的字幕翻译成{settings.TargetLanguage}。只输出该句译文，不要解释、添加引号或重复原文。每条译文末尾不要句号（。或 .），保留句内标点、问号、感叹号和省略号。保留人名、产品名、数字及语气。术语表：\n{settings.Glossary}";
             var text = await provider.GenerateAsync(settings.TranslationModel, system, segment.Text, null, ct);
             ct.ThrowIfCancellationRequested();
-            segment.Translation = StripThinking(text).Trim();
+            segment.Translation = FormatSubtitleTranslation(text);
             await checkpoint(i + 1);
         }
+    }
+    private static string FormatSubtitleTranslation(string text)
+    {
+        var value = StripThinking(text).Trim();
+        // Never rewrite a trailing URL/path or a fenced code payload.
+        if (value.StartsWith("```") || value.StartsWith("~~~") || System.Text.RegularExpressions.Regex.IsMatch(value, @"(?:https?://|[A-Za-z]:[\\/])\S+$")) return value;
+        var end = value.Length;
+        while (end > 0 && "」』”’\"'）)]】》".Contains(value[end - 1])) end--;
+        if (end == 0 || value[end - 1] is not ('.' or '。')) return value;
+        if (end > 1 && value[end - 2] == value[end - 1]) return value; // Keep ellipses.
+        return value.Remove(end - 1, 1);
     }
     public async Task<string> SummarizeAsync(MediaSession session, string operation, Func<string, Task>? delta, CancellationToken ct)
     {

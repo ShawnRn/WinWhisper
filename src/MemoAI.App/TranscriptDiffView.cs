@@ -20,6 +20,7 @@ public sealed class TranscriptDiffView : ContentControl
         if (Diff is null) { Content = null; return; }
         var comparison = TranscriptTextDiff.Compare(Diff.Before, Diff.After);
         var rows = new StackPanel { Spacing = 5 };
+        if (Diff.Context.Length > 0) rows.Children.Add(new TextBlock { Text = Diff.Context, FontSize = 14, LineHeight = 23, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
         void Row(IReadOnlyList<TranscriptTextPart> parts, bool removed)
         {
             if (parts.Count == 0) return;

@@ -220,6 +220,13 @@ await Test("Transcript word diffs preserve context and highlight only changed wo
     }
     var longDiff = TranscriptTextDiff.Compare("X " + new string('中', 2500) + " end", "Y " + new string('文', 2500) + " end");
     Check(string.Concat(longDiff.After.Select(p => p.Text)).EndsWith(" end") && longDiff.After[^1] is { Changed: false, Text: " end" }, "大输入没有保留公共后缀");
+    var original = new SubtitleSegment { Id = "translation-only", Text = "Original transcript.", Start = 1, End = 2 };
+    var translated = original.Copy(); translated.Translation = "新增译文";
+    var translationDiff = TranscriptDiff.Build([original], [translated]).Single();
+    Check(translationDiff.Context == original.Text && translationDiff.Before == "" && translationDiff.After == "新增译文", "仅翻译时重复比较未改动原文");
+    var revised = translated.Copy(); revised.Translation = "修订译文";
+    translationDiff = TranscriptDiff.Build([translated], [revised]).Single();
+    Check(translationDiff.Context == original.Text && translationDiff.Before == "新增译文" && translationDiff.After == "修订译文", "译文修订没有独立对比");
 }));
 await Test("Transcript proposals persist, allow/reject is atomic and stale edits cannot overwrite", () => Sync(() =>
 {
@@ -318,6 +325,19 @@ await Test("AI translation checkpoints and cancellation retain finished subtitle
     try { await ai.TranslateAsync(cues, _ => { checkpoints++; stop.Cancel(); return Task.CompletedTask; }, stop.Token); }
     catch (OperationCanceledException) { }
     Check(checkpoints == 1 && cues[0].Translation == "译文" && fake.Calls == 1, "取消后继续覆盖后续字幕");
+});
+await Test("Subtitle translation omits final periods for local and API providers", async () =>
+{
+    foreach (var (response, expected) in new[] { ("第一句。第二句。", "第一句。第二句"), ("First. Second.", "First. Second"), ("「你好。」", "「你好」"), ("真的？", "真的？"), ("好！", "好！"), ("Wait...", "Wait..."), ("等一下……", "等一下……"), ("数值 3.14。", "数值 3.14"), ("https://example.com/a.", "https://example.com/a.") })
+    {
+        var model = new FakeModel { Response = response }; var cue = new SubtitleSegment { Start = 1, End = 2, Text = "Original." };
+        var checkpoint = ""; await new AiService(model, new()).TranslateAsync([cue], _ => { checkpoint = cue.Translation; return Task.CompletedTask; }, CancellationToken.None);
+        Check(cue.Translation == expected && checkpoint == expected && cue.Text == "Original." && cue.Start == 1 && cue.End == 2, "译文标点处理破坏原文、时间或检查点");
+    }
+    using var api = new TranslationApi("https://example.invalid/v1", "fixture-secret", new TranslationHandler { Result = "第一句。第二句。" });
+    var remoteCue = new SubtitleSegment { Text = "Original." };
+    await new AiService(api, new()).TranslateAsync([remoteCue], _ => Task.CompletedTask, CancellationToken.None);
+    Check(remoteCue.Translation == "第一句。第二句", "API 译文没有使用相同的字幕标点规则");
 });
 await Test("Session work path refuses traversal IDs", () => Sync(() =>
 {
@@ -722,19 +742,20 @@ sealed class TranscriptFixtureModel : ILocalLanguageModelProvider
 sealed class FakeModel : ILocalLanguageModelProvider
 {
     public int Calls;
+    public string Response = "译文";
     public string LastPrompt = "", LastSystem = "";
     public List<string> Prompts = [];
     public Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<string>>(["test"]);
-    public Task<string> GenerateAsync(string model, string system, string prompt, Func<string, Task>? onDelta, CancellationToken ct) { ct.ThrowIfCancellationRequested(); Calls++; Prompts.Add(prompt); LastPrompt = prompt; LastSystem = system; return Task.FromResult("译文"); }
+    public Task<string> GenerateAsync(string model, string system, string prompt, Func<string, Task>? onDelta, CancellationToken ct) { ct.ThrowIfCancellationRequested(); Calls++; Prompts.Add(prompt); LastPrompt = prompt; LastSystem = system; return Task.FromResult(Response); }
 }
 
 sealed class TranslationHandler : HttpMessageHandler
 {
-    public string Path = "", Body = "", Auth = ""; public bool Fail;
+    public string Path = "", Body = "", Auth = "", Result = "译文"; public bool Fail;
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         Path = request.RequestUri!.AbsolutePath; Body = await request.Content!.ReadAsStringAsync(cancellationToken); Auth = request.Headers.Authorization!.ToString();
-        return new(Fail ? HttpStatusCode.BadRequest : HttpStatusCode.OK) { Content = new StringContent(Fail ? "private-error fixture-secret" : "{\"choices\":[{\"message\":{\"content\":\"译文\"}}]}") };
+        return new(Fail ? HttpStatusCode.BadRequest : HttpStatusCode.OK) { Content = new StringContent(Fail ? "private-error fixture-secret" : JsonSerializer.Serialize(new { choices = new[] { new { message = new { content = Result } } } })) };
     }
 }
 

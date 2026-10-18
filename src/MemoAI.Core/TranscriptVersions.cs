@@ -22,7 +22,7 @@ public sealed class TranscriptRevision
     public static string Hash(IEnumerable<SubtitleSegment> cues) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Json.Write(cues))));
 }
 
-public sealed record TranscriptDiff(string TimeLabel, string Kind, string Before, string After)
+public sealed record TranscriptDiff(string TimeLabel, string Kind, string Before, string After, string Context = "")
 {
     public static List<TranscriptDiff> Build(IReadOnlyList<SubtitleSegment> before, IReadOnlyList<SubtitleSegment> after)
     {
@@ -32,9 +32,19 @@ public sealed record TranscriptDiff(string TimeLabel, string Kind, string Before
         {
             if (!fresh.TryGetValue(cue.Id, out var next)) rows.Add((cue.Start, new(Time(cue), "删除 / 重新切分", cue.Text + (cue.Translation.Length > 0 ? "\n译文：" + cue.Translation : ""), "")));
             else if (cue.Text != next.Text || cue.Translation != next.Translation || cue.Start != next.Start || cue.End != next.End || cue.Speaker != next.Speaker)
-                rows.Add((cue.Start, new(Time(cue) + (Time(cue) == Time(next) ? "" : " ⇒ " + Time(next)), "修改", cue.Text + (cue.Translation.Length > 0 ? "\n译文：" + cue.Translation : ""), next.Text + (next.Translation.Length > 0 ? "\n译文：" + next.Translation : ""))));
+            {
+                var time = Time(cue) + (Time(cue) == Time(next) ? "" : " ⇒ " + Time(next));
+                var speaker = cue.Speaker == next.Speaker ? "" : $" · 说话人：{cue.Speaker} → {next.Speaker}";
+                if (cue.Text == next.Text)
+                {
+                    var translationChanged = cue.Translation != next.Translation;
+                    var kind = translationChanged ? cue.Translation.Length == 0 ? "新增译文" : next.Translation.Length == 0 ? "删除译文" : "修改译文" : "时间 / 说话人修改";
+                    rows.Add((cue.Start, new(time, kind + speaker, translationChanged ? cue.Translation : "", translationChanged ? next.Translation : "", cue.Text + (!translationChanged && cue.Translation.Length > 0 ? "\n译文：" + cue.Translation : ""))));
+                }
+                else rows.Add((cue.Start, new(time, "修改" + speaker, cue.Text + (cue.Translation.Length > 0 ? "\n译文：" + cue.Translation : ""), next.Text + (next.Translation.Length > 0 ? "\n译文：" + next.Translation : ""))));
+            }
         }
-        foreach (var cue in after.Where(c => !old.ContainsKey(c.Id))) rows.Add((cue.Start, new(Time(cue), "新增 / 重新切分", "", cue.Text)));
+        foreach (var cue in after.Where(c => !old.ContainsKey(c.Id))) rows.Add((cue.Start, new(Time(cue), "新增 / 重新切分", "", cue.Text + (cue.Translation.Length > 0 ? "\n译文：" + cue.Translation : ""))));
         return rows.OrderBy(r => r.Item1).Select(r => r.Item2).ToList();
     }
 }
