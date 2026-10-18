@@ -3,7 +3,8 @@
 ## 2026-10-18：GPU 适配与商店入口统一
 
 - 三种离线安装程序已生成，当前用户安装、升级、安装后 UI / 真实视频、本地工具、默认无桌面快捷方式、卸载保留用户文件及注册项清理均通过：Universal `artifacts/installer-tests/20261018-161219-5d1de560`，ARM64 `20261018-161443-4013157c`，x64 `20261018-161921-2748072b`。Universal 自动选取 ARM64；x64 界面为 ARM64 兼容执行。
-- Windows x64 CI 对独立 [x64 包](https://github.com/ShawnRn/WinWhisper/actions/runs/39112211839) 和 [Universal 包](https://github.com/ShawnRn/WinWhisper/actions/runs/39112582083) 的当前用户 / 所有用户安装、升级、包内 CLI、默认快捷方式及卸载检查全部通过。Universal 自动选中 x64 应用与 Worker。CI 未运行 WinUI / GPU 验证；物理 x64 和其他 GPU 仍需各自验收。三个安装包及第三方源码包的远端 SHA-256 已与本地核对一致，准备公开预发布。
+- Windows x64 CI 对独立 [x64 包](https://github.com/ShawnRn/WinWhisper/actions/runs/39112211839) 和 [Universal 包](https://github.com/ShawnRn/WinWhisper/actions/runs/39112582083) 的当前用户 / 所有用户安装、升级、包内 CLI、默认快捷方式及卸载检查全部通过。Universal 自动选中 x64 应用与 Worker。CI 未运行 WinUI / GPU 验证；物理 x64 和其他 GPU 仍需各自验收。三个安装包、第三方源码包、验证记录和校验清单的远端 SHA-256 已与本地核对一致。
+- [v0.1.0-preview.1](https://github.com/ShawnRn/WinWhisper/releases/tag/v0.1.0-preview.1) 已于 2026-10-18 公开为 prerelease，包含 Universal / x64 / ARM64 三个离线安装程序、源码包、验证记录和 SHA-256 清单。安装程序未签名，默认当前用户安装、不创建桌面快捷方式。README、AGENTS 与工作流文档已同步。
 - 设置页去掉模型下载区、配音和说话人模型下载按钮，只保留参数、服务及已有文件路径；快捷入口改为「模型商店」。可选 CUDA 运行时也只在商店的语音辅助分类管理，支持固定 SHA-256、续传、暂停及原子完成标记。
 - ONNX 自动尝试 CUDA → DirectML → CPU。ARM64 的 CUDA 运行在独立 x64 兼容 Worker；DirectML 按 ARM64 / x64 构建，不将 x64 DLL 装入 ARM64 进程。GPU 工作进程在用户数据目录准备，支持安装到只读的 Program Files。
 - 推理前进行受限 GPU 探测，读取实际算子执行事件；没有目标 GPU 事件不能宣称 GPU 加速。兼容 CPU 算子会明确显示；检查点复用标为缓存。补齐 CUDA / cuDNN 依赖检查，退出码 0 但原生日志报错时也拒绝完成。配音结果经父进程验证后再替换最终文件，录音进程退出及时取消等待输入。
