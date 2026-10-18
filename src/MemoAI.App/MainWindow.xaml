@@ -180,10 +180,18 @@
      </StackPanel></ScrollViewer>
      <ScrollViewer x:Name="SettingsView" Visibility="Collapsed"><StackPanel x:Name="SettingsContent" Padding="30" Spacing="18" MaxWidth="1000" HorizontalAlignment="Stretch"/></ScrollViewer>
      <Grid x:Name="ModelStoreView" Visibility="Collapsed" Padding="30" RowSpacing="20">
-      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
       <Grid ColumnSpacing="20"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel Spacing="8"><TextBlock Text="模型商店" FontSize="30" FontWeight="SemiBold"/><TextBlock Text="为你的内容，选一位本地搭档。下载、应用，都在这里完成。" Style="{StaticResource Muted}"/></StackPanel><Button Grid.Column="1" Content="导入本地模型" VerticalAlignment="Center" Click="ImportModel_Click"/></Grid>
-      <Grid Grid.Row="1" ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="180"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="StoreSearch" PlaceholderText="搜索模型、语言或用途" TextChanged="StoreFilter_Changed"/><ComboBox Grid.Column="1" x:Name="StoreCategory" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="StoreCategory_Changed"><ComboBoxItem Content="全部模型"/><ComboBoxItem Content="音视频转写"/><ComboBoxItem Content="翻译与总结"/><ComboBoxItem Content="配音与说话人"/><ComboBoxItem Content="已下载"/></ComboBox><Button Grid.Column="2" Content="刷新 Ollama" Click="RefreshOllama_Click"/></Grid>
-      <ScrollViewer x:Name="StoreScroll" Grid.Row="2"><StackPanel x:Name="StoreCards" Spacing="14" Padding="0,0,8,12"/></ScrollViewer>
+      <StackPanel Grid.Row="1" Spacing="8">
+       <ListView x:Name="StoreCategory" SelectionMode="Single" SelectedIndex="0" SelectionChanged="StoreCategory_Changed" HorizontalAlignment="Left" ScrollViewer.HorizontalScrollBarVisibility="Hidden" ScrollViewer.VerticalScrollBarVisibility="Disabled" AutomationProperties.Name="模型用途">
+        <ListView.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListView.ItemsPanel>
+        <ListView.ItemContainerStyle><Style TargetType="ListViewItem" BasedOn="{StaticResource SingleSurfaceListItem}"><Setter Property="Padding" Value="14,8"/><Setter Property="Margin" Value="0,0,8,0"/></Style></ListView.ItemContainerStyle>
+        <x:String>转写模型</x:String><x:String>翻译与对话</x:String><x:String>配音</x:String><x:String>语音辅助</x:String>
+       </ListView>
+       <TextBlock x:Name="StoreCategoryDescription" Text="把音视频转成文字。选择模型后，可在转写页或录音页使用。" Style="{StaticResource Muted}" FontSize="12"/>
+      </StackPanel>
+      <Grid Grid.Row="2" ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="StoreSearch" PlaceholderText="搜索当前分类的模型或语言" TextChanged="StoreFilter_Changed"/><CheckBox Grid.Column="1" x:Name="StoreInstalledOnly" Content="仅看已下载" Click="StoreInstalledOnly_Click"/><Button Grid.Column="2" x:Name="RefreshOllamaButton" Content="刷新 Ollama" Click="RefreshOllama_Click" Visibility="Collapsed"/></Grid>
+      <ScrollViewer x:Name="StoreScroll" Grid.Row="3"><StackPanel x:Name="StoreCards" Spacing="14" Padding="0,0,8,12"/></ScrollViewer>
      </Grid>
      <InfoBar x:Name="OperationNotice" IsOpen="False" IsClosable="True" IsIconVisible="True" VerticalAlignment="Top" HorizontalAlignment="Right" MaxWidth="540" Margin="18" Canvas.ZIndex="10">
       <ProgressBar x:Name="OperationProgress" Height="3" MinWidth="180" Visibility="Collapsed"/>

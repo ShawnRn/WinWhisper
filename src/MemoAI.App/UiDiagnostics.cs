@@ -14,7 +14,7 @@ public sealed partial class MainWindow
         {
             // Invoked only by an explicit development argument with a separate --data-root.
             if (!Environment.GetCommandLineArgs().Any(a => a.StartsWith("--data-root="))) throw new InvalidOperationException("UI 自测必须指定隔离的数据目录。");
-            ollamaModels = ["test-translation", "test-summary-a", "test-summary-b"];
+            ollamaModels = ["test-translation", "test-summary-a", ..Enumerable.Range(0, 12).Select(i => $"fixture-model-{i}"), "test-summary-b"];
             var navigationPassed = true;
             foreach (var (item, page) in new (NavigationViewItem, UIElement)[] { (NavQueue, QueueView), (NavRecord, RecordView), (NavLink, LinkView), (NavModels, ModelStoreView), (NavSettings, SettingsView), (NavLibrary, LibraryView) })
             {
@@ -22,15 +22,26 @@ public sealed partial class MainWindow
                 navigationPassed &= item.IsSelected && page.Visibility == Visibility.Visible;
             }
             result["navigationTracksAllSixPages"] = navigationPassed;
-            StoreCategory.SelectedIndex = 1; StoreSearch.Text = "parakeet"; BuildModelStore();
+            StoreCategory.SelectedIndex = 0; StoreSearch.Text = "parakeet"; BuildModelStore();
             result["parakeetModelsVisibleInStore"] = modelCards.Count == 3;
             StoreSearch.Text = "阿里"; BuildModelStore();
             result["alibabaModelsVisibleInStore"] = modelCards.Count == 7;
             StoreSearch.Text = ""; StoreCategory.SelectedIndex = 0; BuildModelStore();
+            var categoriesSeparated = modelCards.Count == 14 && modelCards.Keys.All(k => k.StartsWith("whisper-") || AsrModels.All.Any(m => m.Id == k)) && ollamaButtons.Count == 0;
+            StoreCategory.SelectedIndex = 1; BuildModelStore();
+            categoriesSeparated &= modelCards.Keys.SequenceEqual(new[] { "qwen" }) && ollamaButtons.Count == ollamaModels.Length && RefreshOllamaButton.Visibility == Visibility.Visible;
+            StoreCategory.SelectedIndex = 2; BuildModelStore();
+            categoriesSeparated &= modelCards.Keys.SequenceEqual(new[] { "kokoro" }) && ollamaButtons.Count == 0;
+            StoreCategory.SelectedIndex = 3; BuildModelStore();
+            categoriesSeparated &= modelCards.Keys.Order().SequenceEqual(new[] { "speakers", "vad" }) && RefreshOllamaButton.Visibility == Visibility.Collapsed;
+            result["modelStoreSeparatesFourPurposes"] = categoriesSeparated;
             // Reproduce a preinstalled model at first render, then exercise the
             // enabled/disabled cycle on the actual generated native template.
             var installedFixture = Path.Combine(paths.ModelRoot, "installed-model-fixture"); File.WriteAllText(installedFixture, "fixture");
             settings.SpeakerSegmentationModel = settings.SpeakerEmbeddingModel = installedFixture;
+            StoreInstalledOnly.IsChecked = true; BuildModelStore();
+            result["downloadedFilterKeepsPurposeAndHidesUninstalledModels"] = StoreCategory.SelectedIndex == 3 && modelCards.Keys.SequenceEqual(new[] { "speakers" });
+            StoreInstalledOnly.IsChecked = false;
             // Keep the tested card in the viewport: an offscreen ScrollViewer
             // child may have a template before its composition brush connects.
             StoreSearch.Text = "说话人"; BuildModelStore(); ShowPage(ModelStoreView); StoreScroll.ChangeView(null, 0, null, true); StoreCards.UpdateLayout(); await Task.Delay(100);
@@ -46,7 +57,7 @@ public sealed partial class MainWindow
             }
             result["installedModelButtonKeepsG2ContourWhenDisabled"] = keepsContour;
             result["installedButtonSurface"] = $"enabled={installedButton.IsEnabled};loaded={installedPaint?.IsLoaded};size={installedPaint?.ActualWidth}x{installedPaint?.ActualHeight};radius={installedPaint?.CornerRadius};geometry={installedPaint?.HasGeometry}";
-            StoreSearch.Text = ""; BuildModelStore();
+            StoreSearch.Text = ""; StoreCategory.SelectedIndex = 0; BuildModelStore();
             result["settingsContainAboutMetadata"] = Descendants(SettingsContent).OfType<TextBlock>().Any(t => t.Text.Contains("开发者：Shawn Rain") && t.Text.Contains("MIT"));
             ShowPage(RecordView); await Task.Delay(80);
             var recordBounds = RecordingContent.TransformToVisual(RecordView).TransformBounds(new Windows.Foundation.Rect(0, 0, RecordingContent.ActualWidth, RecordingContent.ActualHeight));
@@ -206,7 +217,7 @@ public sealed partial class MainWindow
             var idleGeometry = ShellSurface.GeometryUpdates; var idleConnections = ShellSurface.Connections; var idlePaint = ShellSurface.PaintIdentity;
             await Task.Delay(800); // Includes several playback timer ticks with no user action.
             result["idleBackgroundDoesNotRebuildGeometryOrReconnect"] = ShellSurface.GeometryUpdates == idleGeometry && ShellSurface.Connections == idleConnections && ReferenceEquals(idlePaint, ShellSurface.PaintIdentity);
-            BuildModelStore(); ShowPage(ModelStoreView);
+            StoreCategory.SelectedIndex = 1; BuildModelStore(); ShowPage(ModelStoreView);
             await Task.Delay(100); // Let the real WinUI layout establish the scroll extent.
             StoreScroll.ChangeView(null, StoreScroll.ScrollableHeight, null, true);
             ollamaButtons["test-summary-b"].Summary.Focus(FocusState.Programmatic);

@@ -13,36 +13,45 @@ public sealed partial class MainWindow
     private readonly Dictionary<string, (TextBlock Badge, Button Apply)> modelCards = [];
     private readonly Dictionary<string, (Button Translate, Button Summary)> ollamaButtons = [];
     private string[] ollamaModels = [];
+    private bool readingOllama, changingStoreCategory;
     private async void ModelStore_Click(object sender, RoutedEventArgs e)
     {
         if (StoreCards.Children.Count == 0) BuildModelStore(); else RefreshModelStoreStates();
         ShowPage(ModelStoreView);
-        if (ollamaModels.Length == 0)
-        {
-            try
-            {
-                var snapshot = Json.Read<AppSettings>(Json.Write(settings)); snapshot.ModelProvider = LanguageModelKind.Ollama;
-                using var local = new LocalLanguageModelProvider(paths, snapshot); ollamaModels = (await local.ListModelsAsync(CancellationToken.None)).ToArray();
-                if (ModelStoreView.Visibility == Visibility.Visible) BuildModelStore();
-            }
-            catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or TaskCanceledException or ArgumentException) { }
-        }
+        if (StoreCategory.SelectedIndex == 1 && ollamaModels.Length == 0) await ReadOllamaModelsAsync();
     }
-    private void StoreFilter_Changed(object sender, TextChangedEventArgs e) { if (store is not null) BuildModelStore(); }
-    private void StoreCategory_Changed(object sender, SelectionChangedEventArgs e) { if (store is not null) BuildModelStore(); }
+    private void StoreFilter_Changed(object sender, TextChangedEventArgs e) { if (store is not null && !changingStoreCategory) BuildModelStore(); }
+    private async void StoreCategory_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (store is null || StoreSearch is null) return;
+        changingStoreCategory = true; StoreSearch.Text = ""; changingStoreCategory = false;
+        BuildModelStore(); StoreScroll.ChangeView(null, 0, null, true);
+        if (StoreCategory.SelectedIndex == 1 && ollamaModels.Length == 0) await ReadOllamaModelsAsync();
+    }
+    private void StoreInstalledOnly_Click(object sender, RoutedEventArgs e) { BuildModelStore(); StoreScroll.ChangeView(null, 0, null, true); }
     private void BuildModelStore()
     {
         StoreCards.Children.Clear(); modelCardProgress.Clear(); modelCards.Clear(); ollamaButtons.Clear();
         var filter = StoreCategory.SelectedIndex; var query = StoreSearch.Text.Trim();
+        var category = filter switch { 1 => "翻译与总结", 2 => "配音", 3 => "语音辅助", _ => "音视频转写" };
+        StoreCategoryDescription.Text = filter switch
+        {
+            1 => "用于翻译、总结和内容问答。可使用本地 GGUF 或已有的 Ollama 模型。",
+            2 => "把文字合成为声音，为字幕生成本地配音。",
+            3 => "静音检测和说话人识别等辅助组件，不用于直接转写。",
+            _ => "把音视频转成文字。选择模型后，可在转写页或录音页使用。"
+        };
+        RefreshOllamaButton.Visibility = filter == 1 ? Visibility.Visible : Visibility.Collapsed;
         var models = StoreModels.All.Where(m =>
-            (query.Length == 0 || $"{m.Name} {m.Subtitle} {m.Description}".Contains(query, StringComparison.OrdinalIgnoreCase)) &&
-            (filter == 0 || filter == 4 && StoreModels.IsInstalled(m, settings, paths.ModelRoot) || filter == 1 && m.Category == "音视频转写" || filter == 2 && m.Category == "翻译与总结" || filter == 3 && m.Category == "配音与说话人")).ToArray();
+            m.Category == category && (StoreInstalledOnly.IsChecked != true || StoreModels.IsInstalled(m, settings, paths.ModelRoot)) &&
+            (query.Length == 0 || $"{m.Name} {m.Subtitle} {m.Description}".Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray();
         foreach (var model in models) StoreCards.Children.Add(ModelCard(model));
-        if (filter is 0 or 2 or 4)
+        var localModels = filter == 1 ? ollamaModels.Where(n => query.Length == 0 || n.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray() : [];
+        if (filter == 1 && (localModels.Length > 0 || query.Length == 0))
         {
             var title = new TextBlock { Text = "已有的 Ollama 模型", Style = (Style)Application.Current.Resources["SectionTitle"], Margin = new Thickness(0, 12, 0, 0) }; StoreCards.Children.Add(title);
             if (ollamaModels.Length == 0) StoreCards.Children.Add(new TextBlock { Text = "点击「刷新 Ollama」读取本机模型，无需重复下载。", Style = (Style)Application.Current.Resources["Muted"] });
-            foreach (var name in ollamaModels.Where(n => query.Length == 0 || n.Contains(query, StringComparison.OrdinalIgnoreCase)))
+            foreach (var name in localModels)
             {
                 var row = new Grid { ColumnSpacing = 12 }; row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
                 row.Children.Add(new TextBlock { Text = name, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, FontSize = 13 });
@@ -54,7 +63,7 @@ public sealed partial class MainWindow
                 StoreCards.Children.Add(new ContinuousSurface { Style = (Style)Application.Current.Resources["Card"], Padding = new Thickness(18), Child = row });
             }
         }
-        if (models.Length == 0 && filter is 1 or 3) StoreCards.Children.Add(new TextBlock { Text = "没有匹配的模型。", Style = (Style)Application.Current.Resources["Muted"] });
+        if (models.Length == 0 && localModels.Length == 0) StoreCards.Children.Add(new TextBlock { Text = query.Length > 0 ? "当前分类没有匹配的模型，试试其他关键词。" : StoreInstalledOnly.IsChecked == true ? "这个分类还没有已下载的模型。取消筛选后可以浏览和下载。" : "这个分类暂时没有模型。", Style = (Style)Application.Current.Resources["Muted"] });
         RefreshModelStoreStates();
     }
     private ContinuousSurface ModelCard(StoreModel model)
@@ -152,12 +161,21 @@ public sealed partial class MainWindow
         if (translation) settings.TranslationModel = name; else settings.SummaryModel = name;
         SaveAppliedModel(); await Task.CompletedTask;
     }
-    private async void RefreshOllama_Click(object sender, RoutedEventArgs e) => await SafeAsync(async () =>
+    private async void RefreshOllama_Click(object sender, RoutedEventArgs e) => await ReadOllamaModelsAsync();
+    private async Task ReadOllamaModelsAsync()
     {
-        var snapshot = Json.Read<AppSettings>(Json.Write(settings)); snapshot.ModelProvider = LanguageModelKind.Ollama;
-        using var local = new LocalLanguageModelProvider(paths, snapshot); ollamaModels = (await local.ListModelsAsync(CancellationToken.None)).ToArray();
-        BuildModelStore(); Status($"发现 {ollamaModels.Length} 个本地 Ollama 模型");
-    });
+        if (readingOllama) return;
+        readingOllama = true; RefreshOllamaButton.IsEnabled = false; RefreshOllamaButton.Content = "读取中…";
+        try
+        {
+            var snapshot = Json.Read<AppSettings>(Json.Write(settings)); snapshot.ModelProvider = LanguageModelKind.Ollama;
+            using var local = new LocalLanguageModelProvider(paths, snapshot); ollamaModels = (await local.ListModelsAsync(CancellationToken.None)).ToArray();
+            if (StoreCategory.SelectedIndex == 1) BuildModelStore();
+            Status($"发现 {ollamaModels.Length} 个本地 Ollama 模型");
+        }
+        catch (Exception ex) { if (!closing) Status("无法读取 Ollama 模型，请确认本地服务已启动：" + ex.Message); }
+        finally { readingOllama = false; if (!closing) { RefreshOllamaButton.IsEnabled = true; RefreshOllamaButton.Content = "刷新 Ollama"; } }
+    }
     private async Task DownloadStoreModelAsync(StoreModel model)
     {
         if (modelDownloads.ContainsKey(model.Id)) return;
