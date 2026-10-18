@@ -21,7 +21,7 @@ public sealed class SherpaTranscription(AppPaths paths) : ITranscriptionEngine
     {
         var s = request.Settings; var model = AsrModels.ReadInstallation(s.TranscriptionModelPath);
         return Path.Combine(request.WorkDirectory, "transcription", MediaTools.CacheKey(request.MediaPath, s.TranscriptionModelPath,
-            Json.Write(new { version = "sherpa-1.13.8-gpu-v3", provider, model.Sha256, s.AutoSegmentEnglish, s.RemoveEnglishFillers, s.Language, s.Glossary, s.EnableVad, request.RangeStart, request.RangeEnd })));
+            Json.Write(new { version = "sherpa-1.13.8-gpu-v4", provider, model.Sha256, s.AutoSegmentEnglish, s.RemoveEnglishFillers, s.Language, s.Glossary, s.EnableVad, request.RangeStart, request.RangeEnd })));
     }
     public static OfflineRecognizerConfig Configuration(string manifest, AppSettings settings)
     {

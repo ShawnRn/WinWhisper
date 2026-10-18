@@ -35,7 +35,7 @@ public static class SentenceSegmentation
 
     // Full JSON contains BPE pieces. Join pieces into words before using their
     // timestamps; never invent word timings by dividing cue duration by length.
-    public static List<TimedWord> ReadWhisperWords(JsonElement cue, double offset, double finish)
+    public static List<TimedWord> ReadWhisperWords(JsonElement cue, double offset, double finish, Func<double, double>? timeline = null)
     {
         if (!cue.TryGetProperty("tokens", out var tokens)) return [];
         var words = new List<TimedWord>();
@@ -44,8 +44,11 @@ public static class SentenceSegmentation
             if (token.TryGetProperty("id", out var id) && id.GetInt32() >= 50256) continue;
             var text = token.GetProperty("text").GetString() ?? "";
             if (text.Length == 0 || !token.TryGetProperty("offsets", out var times)) continue;
-            var start = offset + times.GetProperty("from").GetDouble() / 1000;
-            var end = Math.Min(finish, offset + times.GetProperty("to").GetDouble() / 1000);
+            var rawStart = times.GetProperty("from").GetDouble() / 1000;
+            var rawEnd = times.GetProperty("to").GetDouble() / 1000;
+            if (!double.IsFinite(rawStart) || !double.IsFinite(rawEnd) || rawStart < 0 || rawEnd < rawStart) return [];
+            var start = offset + (timeline?.Invoke(rawStart) ?? rawStart);
+            var end = Math.Min(finish, offset + (timeline?.Invoke(rawEnd) ?? rawEnd));
             if (start < offset || end < start) return [];
             if (words.Count > 0 && !char.IsWhiteSpace(text[0]))
             { var previous = words[^1]; words[^1] = previous with { Text = previous.Text + text, End = Math.Max(previous.End, end) }; }
@@ -87,15 +90,17 @@ public static class SentenceSegmentation
                 for (var i = first; i < words.Length; i++)
                 {
                     chars += words[i].Text.Length; var duration = words[i].End - words[first].Start;
-                    if (i > first && (chars > 96 || duration > 7)) break;
+                    // Length is a preference, not a forced cut through a phrase.
+                    // The wider hard bounds keep the search bounded for long audio.
+                    if (i > first && (chars > 160 || duration > 10)) break;
                     var last = i == words.Length - 1;
                     var gap = last ? 0 : words[i + 1].Start - words[i].End;
                     var natural = EndsSentence(words[i].Text);
                     var pause = gap >= .45 || silences?.Any(s => s.End - s.Start >= .3 && s.Start <= words[i].End + .15 && s.End >= words[i].End && (last || s.End <= words[i + 1].Start + .15)) == true;
-                    var cost = 12 + Math.Pow((duration - 4) / 2, 2) + Math.Max(0, chars - 76) * .3;
+                    var cost = 12 + Math.Pow((duration - 4) / 2, 2) + Math.Max(0, chars - 84) * .55 + Math.Max(0, duration - 7) * 5;
                     cost += natural || last ? 0 : pause ? 5 : Regex.IsMatch(words[i].Text, "[,;:]$|[，；：]$") ? 9 : 23;
                     if (duration < 1.2 && !last) cost += 35;
-                    if (!natural && !last && Regex.IsMatch(words[i].Text, @"\b(?:a|an|the|of|to|and|or|at|in|for|with|my|your|our|is|are|was|were|that|this|these|those)$", RegexOptions.IgnoreCase)) cost += 40;
+                    if (!natural && !last) cost += BoundaryPenalty(words[i].Text, words[i + 1].Text, i + 2 < words.Length ? words[i + 2].Text : "");
                     if (cost + costs[i + 1] < costs[first]) { costs[first] = cost + costs[i + 1]; cuts[first] = i + 1; }
                     if (natural && duration >= 1.2 || gap >= .8) break;
                 }
@@ -112,10 +117,25 @@ public static class SentenceSegmentation
         {
             if (!HasReliableWords(cue) || !IsEnglish(cue.Text) || cue.Translation.Length > 0)
             { Flush(); var copy = cue.Copy(); copy.Text = ChineseTypography.Apply(copy.Text); output.Add(copy); continue; }
-            if (group.Count > 0 && (cue.Start - group[^1].End > 1.2 || cue.Speaker != group[^1].Speaker || cue.Words[0].Start < group[^1].Words[^1].End)) Flush();
+            if (group.Count > 0 && (cue.Start - group[^1].End > 1.2 || cue.Speaker != group[^1].Speaker || cue.Words[0].Start < group[^1].Words[^1].End - .02)) Flush();
             group.Add(cue);
         }
         Flush(); return output;
+    }
+    private static double BoundaryPenalty(string left, string right, string following)
+    {
+        var a = left.Trim(); var b = right.Trim();
+        var cost = Regex.IsMatch(a, @"\b(?:a|an|the|of|to|and|or|at|in|for|with|by|from|my|your|our|is|are|was|were|that|this|these|those|I|we|you|he|she|it|they|its|I’m|it’s|we’re|you’re|not)$", RegexOptions.IgnoreCase) ? 45 : 0;
+        // Do not strand the unit in the next cue (4,000 | acres, twenty | miles),
+        // or split a multiword quantity / an English possessive.
+        var number = Regex.IsMatch(a, @"(?:\d[\d,.]*|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|hundred|thousand|million|billion))$", RegexOptions.IgnoreCase);
+        if (number && Regex.IsMatch(b, @"^(?:\d|hundred\b|thousand\b|million\b|billion\b|percent\b|per\b|acres?\b|hectares?\b|miles?\b|kilomet(?:er|re)s?\b|met(?:er|re)s?\b|feet\b|foot\b|inches?\b|seconds?\b|minutes?\b|hours?\b|days?\b|years?\b|dollars?\b|euros?\b|pounds?\b|kilograms?\b|tons?\b|tonnes?\b|lit(?:er|re)s?\b|degrees?\b|[kmg]?w(?:atts?)?\b|[kmg]?hz\b|[km]?m\b|kg\b|mph\b)", RegexOptions.IgnoreCase)) cost += 100;
+        if (Regex.IsMatch(a, @"[A-Za-z]’s$")) cost += 55;
+        if (Regex.IsMatch(b, @"^(?:and|or|of|to|in|at|for|with|which|whose)\b", RegexOptions.IgnoreCase)) cost += 14;
+        var clause = Regex.IsMatch(b + " " + following.Trim(), @"^(?:(?:I|we|you|he|she|it|they)\s+(?:am|is|are|was|were|have|has|had|can|could|will|would|should|do|does|did|thought|think|hope|want)\b|(?:I’m|it’s|we’re|you’re|they’re|he’s|she’s)\b|thank\s+you\b)", RegexOptions.IgnoreCase);
+        if (clause && cost == 0) cost -= 40;
+        else if (Regex.IsMatch(b, @"^(?:me|us|him|her|them|it)\b", RegexOptions.IgnoreCase)) cost += 32;
+        return cost;
     }
     private static bool EndsSentence(string text)
     {

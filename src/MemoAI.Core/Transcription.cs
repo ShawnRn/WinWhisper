@@ -40,7 +40,7 @@ public sealed class WhisperEngine(AppPaths paths) : ITranscriptionEngine
             var cli = paths.FindEngine(id, "whisper-cli.exe");
             foreach (var dll in Directory.EnumerateFiles(Path.GetDirectoryName(cli)!, "*.dll")) PeArchitecture.RequireCompatible(dll);
             var key = MediaTools.CacheKey(request.MediaPath, request.Settings.TranscriptionModelPath,
-                Json.Write(new { engine = "b5454-word-boundaries-v3", backend, options = TranscriptionOptions.FromSettings(request.Settings), request.Settings.AutoSegmentEnglish, request.Settings.VadModelPath, begin, finish }));
+                Json.Write(new { engine = "b5454-vad-timeline-boundaries-v4", backend, options = TranscriptionOptions.FromSettings(request.Settings), request.Settings.AutoSegmentEnglish, request.Settings.VadModelPath, begin, finish }));
             var cache = Path.Combine(request.WorkDirectory, "transcription", key); Directory.CreateDirectory(cache);
             var all = new List<SubtitleSegment>(); var watch = Stopwatch.StartNew(); var device = backend == ComputeBackend.Cpu ? $"{AppPaths.Rid} CPU" : "";
             var chunkSeconds = request.Settings.TranscriptionChunkSeconds;
@@ -113,15 +113,7 @@ public sealed class WhisperEngine(AppPaths paths) : ITranscriptionEngine
                     else if (match.Success) device = match.Groups[1].Value.Trim();
                     if (device.Length == 0) device = backend.ToString();
                     using var json = JsonDocument.Parse(await File.ReadAllTextAsync(output + ".json", ct));
-                    segments = [];
-                    foreach (var s in json.RootElement.GetProperty("transcription").EnumerateArray())
-                    {
-                        var offsets = s.GetProperty("offsets");
-                        var from = offsets.GetProperty("from").GetDouble() / 1000 + offset;
-                        var to = Math.Min(offsets.GetProperty("to").GetDouble() / 1000 + offset, finish);
-                        var text = ChineseTypography.Apply(s.GetProperty("text").GetString()?.Trim() ?? "");
-                        if (text.Length > 0 && to > from) segments.Add(new() { Start = from, End = to, Text = text, Words = SentenceSegmentation.ReadWhisperWords(s, offset, finish) });
-                    }
+                    segments = WhisperTimeline.ReadSegments(json.RootElement, offset, finish, result.Error);
                     if (request.Settings.RemoveEnglishFillers) segments = TranscriptEditing.RemoveFillers(segments);
                     if (request.Settings.AutoSegmentEnglish && segments.Any(s => SentenceSegmentation.IsEnglish(s.Text) && SentenceSegmentation.HasReliableWords(s)))
                         segments = SentenceSegmentation.Optimize(segments, await media.DetectSilencesAsync(wav, ct, offset));

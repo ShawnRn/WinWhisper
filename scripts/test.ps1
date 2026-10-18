@@ -1,4 +1,4 @@
-param([switch]$Integration, [switch]$Ollama, [switch]$Speech, [switch]$Benchmark, [switch]$Online, [switch]$TranscriptEdit, [string]$Gguf='', [string]$OnnxGpu='')
+param([switch]$Integration, [switch]$Ollama, [switch]$Speech, [switch]$Benchmark, [switch]$Online, [switch]$TranscriptEdit, [string]$Gguf='', [string]$OnnxGpu='', [string]$WhisperCache='')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 Set-Location -LiteralPath $root
@@ -11,5 +11,6 @@ if($Online){$testArgs+='--online'}
 if($TranscriptEdit){$testArgs+='--transcript-edit'}
 if($Gguf){$testArgs+="--gguf=$Gguf"}
 if($OnnxGpu){$testArgs+="--asr-gpu=$OnnxGpu"}
+if($WhisperCache){$testArgs+="--whisper-cache=$WhisperCache"}
 & "$root/.tools/dotnet/dotnet.exe" run --project tests/MemoAI.Tests/MemoAI.Tests.csproj -c Release -- @testArgs
 if($LASTEXITCODE){throw 'Verification failed'}

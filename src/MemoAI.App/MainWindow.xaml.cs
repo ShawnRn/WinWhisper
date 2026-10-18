@@ -473,7 +473,7 @@ public sealed partial class MainWindow : Window
             var body = new StackPanel { Spacing = 12 }; body.Children.Add(scope); body.Children.Add(target);
             var destination = runtimeSettings.CloudTranslation ? TranslationApi.ValidateEndpoint(runtimeSettings.TranslationApiBase).ToString() : "本机 · " + (runtimeSettings.ModelProvider == LanguageModelKind.BuiltIn ? Path.GetFileNameWithoutExtension(runtimeSettings.GgufPath) : runtimeSettings.TranslationModel);
             if (runtimeSettings.CloudTranslation && string.IsNullOrWhiteSpace(runtimeSettings.TranslationApiModel)) throw new InvalidOperationException("请在设置中填写翻译 API 模型。");
-            body.Children.Add(new TextBlock { Text = $"{destination}\n" + (runtimeSettings.CloudTranslation ? $"模型：{runtimeSettings.TranslationApiModel}\n将发送所选范围的字幕文字、术语表和翻译要求，不发送音视频。服务可能计费。" : "在本机翻译，译文显示在原文下方。已有译文会被所选范围的新结果覆盖，可撤销。"), TextWrapping = TextWrapping.Wrap });
+            body.Children.Add(new TextBlock { Text = $"{destination}\n" + (runtimeSettings.CloudTranslation ? $"模型：{runtimeSettings.TranslationApiModel}\n将发送所选范围的字幕文字，以及每条前后各最多两条原文作为上下文（可能在所选范围之外）、术语表和翻译要求。不发送音视频或已有译文。服务可能计费。" : "在本机结合前后各最多两条原文翻译，译文显示在原文下方。只修改所选范围的译文，完成后审阅并允许才会写入，可撤销。"), TextWrapping = TextWrapping.Wrap });
             if (!await ConfirmAsync(runtimeSettings.CloudTranslation ? "发送字幕到翻译 API" : "翻译字幕", body, "开始翻译")) return;
             if (aiBusy || current?.Id != session.Id) return;
             runtimeSettings.TargetLanguage = target.Text.Trim(); if (runtimeSettings.TargetLanguage.Length == 0) throw new ArgumentException("请输入目标语言。");
@@ -511,7 +511,7 @@ public sealed partial class MainWindow : Window
                     if (operation == "translate") { response.Content = $"正在翻译{translationScope} · {count}/{segments.Length} 条 → {runtimeSettings.TargetLanguage}\n\n最新译文 [{Subtitles.FormatTime(segments[count - 1].Start, true)}]：\n\n{segments[count - 1].Translation}"; FollowChat(); }
                     await Task.CompletedTask;
                 }
-                await ai.TranslateAsync(segments, Checkpoint, aiCancellation.Token);
+                await ai.TranslateAsync(segments, Checkpoint, aiCancellation.Token, before);
                 translationRun.Status = TranscriptRevision.Hash(before) == TranscriptRevision.Hash(translationRun.After) ? "NoChanges" : "Pending"; store.UpdateTranscriptRun(translationRun);
                 if (gateHeld) { AiService.GpuGate.Release(); gateHeld = false; }
                 var applied = await PreviewTranscriptAsync(session, before, translationRun.After, "翻译字幕", $"{translationScope} · {segments.Length} 条 → {runtimeSettings.TargetLanguage}。允许后更新译文，原文与时间保留。", aiCancellation.Token, translationRun);

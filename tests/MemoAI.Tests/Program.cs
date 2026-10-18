@@ -175,6 +175,30 @@ await Test("Sentence boundaries use original word times and reject fabricated al
     var suffixCue = new SubtitleSegment { Start = 30, End = 32, Text = "I’ m here it’ s ready", Words = splitSuffix };
     Check(SentenceSegmentation.HasReliableWords(suffixCue) && SentenceSegmentation.Optimize([suffixCue]).Single().Text == "I’m here it’s ready", "断句重建文本重新引入空格或丢失对齐");
 }));
+await Test("VAD token timestamps recover only from a complete measured engine map", () => Sync(() =>
+{
+    var log = "whisper_vad: detected 2 speech segments\nwhisper_vad: vad_segment_info: orig_start: 30.00, orig_end: 32.00, vad_start: 0.00, vad_end: 2.00\nwhisper_vad: vad_segment_info: orig_start: 35.00, orig_end: 37.00, vad_start: 2.20, vad_end: 4.20";
+    using var json = JsonDocument.Parse("""{"transcription":[{"offsets":{"from":30000,"to":32000},"text":"4,000 acres","tokens":[{"id":1,"text":"4,000","offsets":{"from":0,"to":1000}},{"id":2,"text":" acres","offsets":{"from":1000,"to":2000}}]},{"offsets":{"from":35000,"to":37000},"text":"Thank you","tokens":[{"id":3,"text":"Thank","offsets":{"from":2200,"to":3200}},{"id":4,"text":" you","offsets":{"from":3200,"to":4200}}]}]}""");
+    var mapped = WhisperTimeline.ReadSegments(json.RootElement, 100, 150, log);
+    Check(mapped.All(SentenceSegmentation.HasReliableWords) && mapped[0].Words[0].Start == 130 && mapped[1].Words[0].Start == 135 && mapped[1].Words[^1].End == 137, "VAD 恢复未使用引擎时间表或片段偏移错误");
+    Check(WhisperTimeline.ReadSegments(json.RootElement, 0, 50, "").All(c => !SentenceSegmentation.HasReliableWords(c)), "没有映射时猜测了对齐");
+    Check(WhisperTimeline.ReadSegments(json.RootElement, 0, 50, log.Replace("detected 2", "detected 3")).All(c => !SentenceSegmentation.HasReliableWords(c)), "接受不完整时间映射");
+    var originalJson = json.RootElement.GetRawText().Replace("\"from\":0,\"to\":1000", "\"from\":30000,\"to\":31000").Replace("\"from\":1000,\"to\":2000", "\"from\":31000,\"to\":32000").Replace("\"from\":2200,\"to\":3200", "\"from\":35000,\"to\":36000").Replace("\"from\":3200,\"to\":4200", "\"from\":36000,\"to\":37000");
+    using var original = JsonDocument.Parse(originalJson);
+    Check(WhisperTimeline.ReadSegments(original.RootElement, 0, 50, log)[1].Words[0].Start == 35, "将原时间再次映射");
+}));
+await Test("English boundaries keep quantities together across cues without changing word times", () => Sync(() =>
+{
+    var words = new List<TimedWord> { new("SpaceX’s", 40, 40.5), new(" rocket", 40.5, 40.9), new(" test", 40.9, 41.2), new(" and", 41.2, 41.5), new(" development", 41.5, 42.2), new(" center", 42.2, 42.6), new(" in", 42.6, 42.8), new(" McGregor", 42.8, 43.3), new(" Texas", 43.3, 43.8), new(" it’s", 43.8, 44.1), new(" 4,000", 44.1, 44.7), new(" acres", 44.7, 45.1), new(" thank", 45.1, 45.4), new(" you", 45.4, 45.6), new(" for", 45.6, 45.8), new(" having", 45.8, 46.1), new(" us", 46.1, 46.3) };
+    SubtitleSegment Cue(IEnumerable<TimedWord> part) { var list = part.ToList(); return new() { Start = list[0].Start, End = list[^1].End, Text = string.Concat(list.Select(w => w.Text)).Trim(), Words = list }; }
+    var output = SentenceSegmentation.Optimize([Cue(words.Take(11)), Cue(words.Skip(11))]);
+    Check(output.All(SentenceSegmentation.HasReliableWords) && output.SelectMany(c => c.Words).SequenceEqual(words), "断句改词、丢词或伪造时间");
+    Check(output.Any(c => c.Text.Contains("4,000 acres")) && !output.Any(c => c.Text.EndsWith("it’s") || c.Text.EndsWith("for") || c.Text.EndsWith("and")), "仍拆分数字单位或悬空功能词");
+    var pause = SentenceSegmentation.Optimize([Cue(words.Take(11)), Cue(words.Skip(11).Select(w => w with { Start = w.Start + 2, End = w.End + 2 }))]);
+    Check(!pause.Any(c => c.Text.Contains("4,000 acres")), "跨越真实长停顿强制粘合");
+    var translated = Cue(words.Take(11)); translated.Translation = "已有译文";
+    Check(SentenceSegmentation.Optimize([translated, Cue(words.Skip(11))])[0].Id == translated.Id, "重排已有译文条目");
+}));
 await Test("English filler cleanup preserves content, real word times and literal examples", () => Sync(() =>
 {
     var cue = new SubtitleSegment { Start = 0, End = 4, Text = "Um, hello uh world.", Translation = "旧译文", Words = [new("Um,", 0, .3), new(" hello", .5, 1), new(" uh", 1.2, 1.5), new(" world.", 2, 3)] };
@@ -320,7 +344,7 @@ await Test("Local model endpoint rejects external destinations", async () =>
 });
 await Test("AI translation checkpoints and cancellation retain finished subtitles", async () =>
 {
-    var fake = new FakeModel(); var ai = new AiService(fake, new()); var cues = session.Segments.Select(s => s.Copy()).ToArray();
+    var fake = new FakeModel { TranslationJson = true }; var ai = new AiService(fake, new()); var cues = session.Segments.Select(s => s.Copy()).ToArray();
     var checkpoints = 0; using var stop = new CancellationTokenSource();
     try { await ai.TranslateAsync(cues, _ => { checkpoints++; stop.Cancel(); return Task.CompletedTask; }, stop.Token); }
     catch (OperationCanceledException) { }
@@ -330,7 +354,7 @@ await Test("Subtitle translation omits final periods for local and API providers
 {
     foreach (var (response, expected) in new[] { ("第一句。第二句。", "第一句。第二句"), ("First. Second.", "First. Second"), ("「你好。」", "「你好」"), ("真的？", "真的？"), ("好！", "好！"), ("Wait...", "Wait..."), ("等一下……", "等一下……"), ("数值 3.14。", "数值 3.14"), ("https://example.com/a.", "https://example.com/a.") })
     {
-        var model = new FakeModel { Response = response }; var cue = new SubtitleSegment { Start = 1, End = 2, Text = "Original." };
+        var model = new FakeModel { Response = response, TranslationJson = true }; var cue = new SubtitleSegment { Start = 1, End = 2, Text = "Original." };
         var checkpoint = ""; await new AiService(model, new()).TranslateAsync([cue], _ => { checkpoint = cue.Translation; return Task.CompletedTask; }, CancellationToken.None);
         Check(cue.Translation == expected && checkpoint == expected && cue.Text == "Original." && cue.Start == 1 && cue.End == 2, "译文标点处理破坏原文、时间或检查点");
     }
@@ -338,6 +362,36 @@ await Test("Subtitle translation omits final periods for local and API providers
     var remoteCue = new SubtitleSegment { Text = "Original." };
     await new AiService(api, new()).TranslateAsync([remoteCue], _ => Task.CompletedTask, CancellationToken.None);
     Check(remoteCue.Translation == "第一句。第二句", "API 译文没有使用相同的字幕标点规则");
+});
+await Test("Translation uses frozen adjacent source outside the selected scope without leaking old translations", async () =>
+{
+    var source = Enumerable.Range(0, 9).Select(i => new SubtitleSegment { Id = "context-" + i, Start = i, End = i + 1, Text = "SOURCE_" + i, Translation = "PRIVATE_OLD_TRANSLATION" }).ToArray();
+    var selected = new[] { source[3].Copy(), source[6].Copy() }; var fake = new FakeModel { TranslationJson = true }; var calls = 0;
+    await new AiService(fake, new()).TranslateAsync(selected, _ => { calls++; source[5].Text = "MUTATED_SOURCE"; return Task.CompletedTask; }, CancellationToken.None, source);
+    Check(calls == 2 && fake.Calls == 2 && fake.Prompts[0].Contains("\"c3\":\"SOURCE_3\"") && fake.Prompts[1].Contains("\"c6\":\"SOURCE_6\""), "非连续范围没有正确分批");
+    Check(fake.Prompts[0].Contains("SOURCE_1") && fake.Prompts[0].Contains("SOURCE_5") && !fake.Prompts[0].Contains("SOURCE_0") && !fake.Prompts[0].Contains("SOURCE_6"), "未读取前后各两条原文或上下文越界");
+    Check(fake.Prompts[1].Contains("SOURCE_5") && fake.Prompts.All(s => !s.Contains("MUTATED_SOURCE") && !s.Contains("PRIVATE_OLD_TRANSLATION") && !s.Contains("译文\"")), "上下文受运行中修改或历史译文污染");
+    Check(source.All(s => s.Translation == "PRIVATE_OLD_TRANSLATION") && selected.All(s => s.Translation == "译文" && s.Start == int.Parse(s.Id[8..])), "预览前覆盖原文或时间");
+    var bad = selected[0].Copy(); bad.Text = "stale"; var failed = false;
+    try { await new AiService(fake, new()).TranslateAsync([bad], _ => Task.CompletedTask, CancellationToken.None, source); } catch (InvalidDataException) { failed = true; }
+    Check(failed && fake.Calls == 2, "过期来源仍被发送到模型");
+    var handler = new TranslationHandler(); using var api = new TranslationApi("https://example.invalid/v1", "fixture-secret", handler);
+    await new AiService(api, new()).TranslateAsync([source[3].Copy()], _ => Task.CompletedTask, CancellationToken.None, source);
+    using var body = JsonDocument.Parse(handler.Body); var messages = body.RootElement.GetProperty("messages");
+    Check(messages[1].GetProperty("content").GetString()!.Contains("SOURCE_4") && messages[1].GetProperty("content").GetString()!.Contains("\"c3\":\"SOURCE_3\"") && !handler.Body.Contains("PRIVATE_OLD_TRANSLATION"), "API 没有相同的上下文或泄露已有译文");
+});
+await Test("Context translation validates complete batches and checkpoints selected cues only", async () =>
+{
+    var source = Enumerable.Range(0, 22).Select(i => new SubtitleSegment { Id = "batch-" + i, Start = i, End = i + 1, Text = "ORIGINAL_" + i }).ToArray();
+    var fake = new FakeModel { TranslationJson = true }; var selected = source.Select(c => c.Copy()).ToArray(); var checkpoints = new List<int>();
+    await new AiService(fake, new()).TranslateAsync(selected, n => { checkpoints.Add(n); return Task.CompletedTask; }, CancellationToken.None, source);
+    Check(checkpoints.SequenceEqual(Enumerable.Range(1, 22)) && fake.Calls == 3 && selected.All(c => c.Translation == "译文") && source.All(c => c.Translation.Length == 0), "漏掉批次或提前修改来源");
+    foreach (var response in new[] { "{\"c0\":\"译文\"}", "{\"c0\":\"译文\",\"c0\":\"重复\",\"c1\":\"译文\"}", "{\"c0\":\"\",\"c1\":\"译文\"}", "{\"c0\":\"译文\",\"c1\":\"译文\",\"extra\":\"额外\"}", "plain output" })
+    {
+        var cues = source.Take(2).Select(c => c.Copy()).ToArray(); var failed = false;
+        try { await new AiService(new FakeModel { Response = response }, new()).TranslateAsync(cues, _ => throw new Exception("无效结果被保存"), CancellationToken.None); } catch (InvalidDataException) { failed = true; }
+        Check(failed && cues.All(c => c.Translation.Length == 0), "接受缺失、重复、空白或无效编号");
+    }
 });
 await Test("Session work path refuses traversal IDs", () => Sync(() =>
 {
@@ -550,6 +604,24 @@ if (args.Contains("--live"))
     });
 }
 
+var whisperCache = args.FirstOrDefault(a => a.StartsWith("--whisper-cache="))?[16..];
+if (whisperCache is not null)
+{
+    await Test("Read-only real Whisper cache recovers VAD alignment and quantities", async () =>
+    {
+        using var json = JsonDocument.Parse(await File.ReadAllTextAsync(whisperCache + ".json"));
+        var finish = json.RootElement.GetProperty("transcription").EnumerateArray().Max(c => c.GetProperty("offsets").GetProperty("to").GetDouble()) / 1000;
+        var raw = WhisperTimeline.ReadSegments(json.RootElement, 0, finish, "");
+        var mapped = WhisperTimeline.ReadSegments(json.RootElement, 0, finish, await File.ReadAllTextAsync(whisperCache + ".engine.log"));
+        var output = SentenceSegmentation.Optimize(mapped);
+        Check(mapped.Count(SentenceSegmentation.HasReliableWords) > raw.Count(SentenceSegmentation.HasReliableWords), "真实 VAD 时间表未恢复有效词对齐");
+        Check(raw.Select(c => c.Text).SequenceEqual(mapped.Select(c => c.Text)) && raw.Select(c => (c.Start, c.End)).SequenceEqual(mapped.Select(c => (c.Start, c.End))), "时间恢复提前改写原字幕");
+        var originalWords = string.Join(" ", mapped.Select(c => c.Text)); var resultWords = string.Join(" ", output.Select(c => c.Text));
+        Check(System.Text.RegularExpressions.Regex.Replace(originalWords, @"\s+", " ") == System.Text.RegularExpressions.Regex.Replace(resultWords, @"\s+", " "), "真实断句丢词或重排");
+        if (originalWords.Contains("4,000 acres")) Check(output.Any(c => c.Text.Contains("4,000 acres")), "真实片段仍拆分数字和单位");
+        await File.WriteAllTextAsync(Path.Combine(run, "whisper-recovered-boundaries.json"), Json.Write(new { rawReliable = raw.Count(SentenceSegmentation.HasReliableWords), mappedReliable = mapped.Count(SentenceSegmentation.HasReliableWords), cues = output }));
+    });
+}
 if (args.Contains("--integration"))
 {
     var paths = new AppPaths(Path.Combine(run, "integration-data"), Path.Combine(root, "engines"));
@@ -594,6 +666,25 @@ if (args.Contains("--integration"))
             Check(File.GetLastWriteTimeUtc(cache[0]) == timestamp, "恢复时重新执行了已完成片段");
         });
     }
+    await Test("Whisper VAD with leading silence retains original word timeline", async () =>
+    {
+        var vadFile = Path.Combine(assets, ModelCatalog.Items.Single(m => m.Id == "vad").FileName);
+        if (!File.Exists(vadFile))
+        {
+            using var downloader = new ModelDownloader(); var vad = ModelCatalog.Items.Single(m => m.Id == "vad");
+            await downloader.DownloadAsync(vad, new(vad.Size, vad.Sha256), assets, null, CancellationToken.None);
+        }
+        var padded = Path.Combine(run, "leading-silence.wav");
+        Processes.EnsureSuccess(await Processes.RunAsync(media.Ffmpeg, ["-hide_banner", "-nostdin", "-y", "-i", source, "-af", "adelay=30000:all=1", "-ar", "16000", "-ac", "1", padded]), "创建静音前导测试音频");
+        var options = new AppSettings { EngineRoot = paths.EngineRoot, Backend = ComputeBackend.Cuda, TranscriptionModelPath = Path.Combine(assets, "ggml-tiny.en.bin"), Language = "en", EnableVad = true, VadModelPath = vadFile };
+        var work = Path.Combine(run, "vad-timeline"); Directory.CreateDirectory(work);
+        var events = new List<JobEvent>();
+        await new WorkerClient(paths).RunAsync(new(Guid.NewGuid().ToString("N"), session.Id, "transcribe", padded, work, options), e => { events.Add(e); return Task.CompletedTask; }, CancellationToken.None);
+        var cues = events.Single(e => e.Type == "completed").Segments!;
+        Check(cues.Any(SentenceSegmentation.HasReliableWords) && cues.Where(SentenceSegmentation.HasReliableWords).All(c => c.Words[0].Start >= 29), "前导静音后词时间仍在压缩时间轴");
+        Check(string.Join(" ", cues.Select(c => c.Text)).Contains("country", StringComparison.OrdinalIgnoreCase), "VAD 对齐测试未识别原音频");
+        await File.WriteAllTextAsync(Path.Combine(work, "events.json"), Json.Write(events));
+    });
     await File.WriteAllTextAsync(Path.Combine(run, "benchmark.json"), Json.Write(benchmark));
     await Test("Video subtitle burn-in export and reopen", async () =>
     {
@@ -614,6 +705,20 @@ if (args.Contains("--ollama"))
         var answer = await provider.GenerateAsync(model, "将英文翻译成中文，只输出译文。", "Local transcription protects your privacy.", null, CancellationToken.None);
         Check(answer.Any(c => c >= 0x4e00 && c <= 0x9fff), "真实本地模型没有返回中文译文");
         await File.WriteAllTextAsync(Path.Combine(run, "ollama.txt"), answer);
+    });
+    await Test("Real Index translation resolves adjacent units and ambiguous words without echoing neighbours", async () =>
+    {
+        var options = new AppSettings(); using var provider = new LocalLanguageModelProvider(new AppPaths(Path.Combine(run, "context-translation")), options);
+        var models = await provider.ListModelsAsync(CancellationToken.None); options.TranslationModel = models.FirstOrDefault(m => m.Contains("Index-Translate-9B")) ?? models.First(m => m.Contains("Index-Translate"));
+        using var stop = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var source = new[] { new SubtitleSegment { Text = "SpaceX’s rocket test and development center in McGregor Texas it’s 4,000", Start = 43.94, End = 49.67 }, new SubtitleSegment { Text = "acres thank you for having us", Start = 49.67, End = 51.5 }, new SubtitleSegment { Text = "We deposited the money at the bank", Start = 60, End = 64 }, new SubtitleSegment { Text = "It was closed on Sunday", Start = 64, End = 67 } };
+        var selected = new[] { source[1].Copy(), source[3].Copy() };
+        await new AiService(provider, options).TranslateAsync(selected, _ => Task.CompletedTask, stop.Token, source);
+        await File.WriteAllTextAsync(Path.Combine(run, "real-context-translation.json"), Json.Write(selected));
+        Check(selected[0].Translation.Contains("英亩") && !selected[0].Translation.Contains("4,000") && !selected[0].Translation.Contains("4000") && !selected[0].Translation.Contains("SpaceX"), "单位未根据相邻原文翻译或回填了相邻字幕内容：" + selected[0].Translation);
+        Check(selected[1].Translation.Contains("银行") && (selected[1].Translation.Contains("关门") || selected[1].Translation.Contains("关闭") || selected[1].Translation.Contains("营业") || selected[1].Translation.Contains("休息")) && !selected[1].Translation.Contains("存入"), "指代没有结合前文或重复相邻内容：" + selected[1].Translation);
+        Check(selected.All(c => !c.Translation.EndsWith('。')) && source.All(c => c.Translation.Length == 0), "修改了原字幕或译文末尾句号未处理");
+        await File.WriteAllTextAsync(Path.Combine(run, "real-context-translation.json"), Json.Write(selected));
     });
 }
 var speechGpu = args.FirstOrDefault(a => a.StartsWith("--speech-gpu="))?[13..];
@@ -743,10 +848,12 @@ sealed class FakeModel : ILocalLanguageModelProvider
 {
     public int Calls;
     public string Response = "译文";
+    public bool TranslationJson;
     public string LastPrompt = "", LastSystem = "";
     public List<string> Prompts = [];
+    public List<string> Systems = [];
     public Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<string>>(["test"]);
-    public Task<string> GenerateAsync(string model, string system, string prompt, Func<string, Task>? onDelta, CancellationToken ct) { ct.ThrowIfCancellationRequested(); Calls++; Prompts.Add(prompt); LastPrompt = prompt; LastSystem = system; return Task.FromResult(Response); }
+    public Task<string> GenerateAsync(string model, string system, string prompt, Func<string, Task>? onDelta, CancellationToken ct) { ct.ThrowIfCancellationRequested(); Calls++; Prompts.Add(prompt); Systems.Add(system); LastPrompt = prompt; LastSystem = system; return Task.FromResult(TranslationJson ? TranslationFixture.Reply(prompt, Response) : Response); }
 }
 
 sealed class TranslationHandler : HttpMessageHandler
@@ -755,7 +862,17 @@ sealed class TranslationHandler : HttpMessageHandler
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         Path = request.RequestUri!.AbsolutePath; Body = await request.Content!.ReadAsStringAsync(cancellationToken); Auth = request.Headers.Authorization!.ToString();
-        return new(Fail ? HttpStatusCode.BadRequest : HttpStatusCode.OK) { Content = new StringContent(Fail ? "private-error fixture-secret" : JsonSerializer.Serialize(new { choices = new[] { new { message = new { content = Result } } } })) };
+        using var requestBody = JsonDocument.Parse(Body); var prompt = requestBody.RootElement.GetProperty("messages")[1].GetProperty("content").GetString()!;
+        var reply = prompt.Contains("〖字幕 JSON〗\n") ? TranslationFixture.Reply(prompt, Result) : Result;
+        return new(Fail ? HttpStatusCode.BadRequest : HttpStatusCode.OK) { Content = new StringContent(Fail ? "private-error fixture-secret" : JsonSerializer.Serialize(new { choices = new[] { new { message = new { content = reply } } } })) };
+    }
+}
+static class TranslationFixture
+{
+    public static string Reply(string prompt, string value)
+    {
+        using var json = JsonDocument.Parse(prompt.Split("〖字幕 JSON〗\n")[1]);
+        return Json.Write(json.RootElement.EnumerateObject().ToDictionary(p => p.Name, _ => value));
     }
 }
 
