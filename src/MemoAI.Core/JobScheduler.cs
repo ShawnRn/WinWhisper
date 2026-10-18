@@ -40,7 +40,7 @@ public sealed class JobScheduler : IJobScheduler, IAsyncDisposable
         if (original.Request is null) throw new InvalidOperationException("该任务缺少可恢复的请求。");
         var job = new JobRecord { SessionId = original.SessionId, Title = original.Title, Operation = original.Operation };
         // Retry uses current settings so a missing model or backend can be corrected.
-        var options = store.GetSession(original.SessionId)?.Transcription;
+        var options = (store.GetSession(original.SessionId) ?? throw new InvalidOperationException("对应内容已删除，无法重试任务。")).Transcription;
         var snapshot = original.Request.Operation == "transcribe" && options is not null ? options.ApplyTo(settings()) : Json.Read<AppSettings>(Json.Write(settings())); snapshot.EngineRoot = paths.EngineRoot;
         job.Request = original.Request with { Id = job.Id, Settings = snapshot };
         await AddAsync(job, ct);

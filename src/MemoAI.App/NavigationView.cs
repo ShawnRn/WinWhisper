@@ -111,7 +111,7 @@ public sealed partial class MainWindow
                 try { await capture.StartAsync(); } catch { capture.Dispose(); SetRecordingOptionsEnabled(true); throw; }
                 if (closing) { await capture.StopAsync(); capture.Dispose(); return; }
                 recorder = capture;
-                recordingSession = new MediaSession { Title = "录音 " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), MediaPath = capture.OutputPath, Transcription = TranscriptionOptions.FromSettings(options) };
+                recordingSession = new MediaSession { Title = "录音 " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), MediaPath = capture.OutputPath, RecordingPath = capture.OutputPath, Transcription = TranscriptionOptions.FromSettings(options) };
                 recordingWatch.Restart(); recordingTimer.Start(); RecordingTime.Text = "00:00:00";
                 RecordingBadge.Visibility = Visibility.Visible;
                 RecordingAction.Content = "停止并保存"; RecordingState.Text = "正在录音 · 可以切换功能区，录音会继续。";

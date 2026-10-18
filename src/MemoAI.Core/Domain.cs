@@ -39,6 +39,7 @@ public partial class MediaSession : ObservableObject
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     [ObservableProperty] private string title = "未命名媒体";
     public string MediaPath { get; set; } = "";
+    public string RecordingPath { get; set; } = "";
     public string SourceUrl { get; set; } = "";
     public string PlaybackPath { get; set; } = "";
     [ObservableProperty] private string folder = "收件箱";

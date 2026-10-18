@@ -42,6 +42,7 @@
 - GPU-intensive work is serialized by default. Keep decoding and inference outside the UI thread and isolate native crashes in workers.
 - ONNX ASR models use versioned `.asr.json` installation records and the pinned catalog in `AsrModels.cs`. Never route an arbitrary `.onnx` file to Whisper, guess a model family, or apply a partially extracted model. Retain model-specific language and license limits.
 - Live recording sends finalized PCM clips to a persistent worker. Keep offsets relative to the recording, preserve audio if inference fails, and retain the single GPU gate. COM process-loopback callbacks must be publicly COM-visible and agile; completion signals used by capture disposal must run continuations asynchronously.
+- Media deletion must explicitly describe owned recording/cache removal. Preserve imported originals and shared references, reject path traversal and reparse points, and refuse deletion while recording/inference still writes that session. Track recording ownership even after associating another media file.
 - Online media, browser Cookie extraction and third-party exports must be user-triggered. Do not log or commit Cookie values, tokens, authentication databases or credentials.
 - Chinese output uses corner quotes 「」, title brackets 《》, spaces between Chinese and English/digits, and full-width Chinese commas. Preserve code, URLs, file paths, valid JSON and English punctuation. Whisper uses decoding context rather than a chat system prompt; apply typography after transcription and in language-model prompts.
 

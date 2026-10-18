@@ -28,7 +28,8 @@ public sealed partial class MainWindow
         if (File.Exists(settings.TranscriptionModelPath) && !models.Any(m => m.Path == settings.TranscriptionModelPath)) models.Add(new(TranscriptionEngines.ModelName(settings.TranscriptionModelPath), settings.TranscriptionModelPath));
         var selectedPath = (RecordingModel.SelectedItem as ModelChoice)?.Path ?? settings.TranscriptionModelPath;
         RecordingModel.ItemsSource = models; RecordingModel.SelectedItem = models.FirstOrDefault(m => m.Path == selectedPath) ?? models.FirstOrDefault();
-        RecordingLanguage.ItemsSource = languages; RecordingLanguage.SelectedItem = languages.FirstOrDefault(l => l.Code == settings.Language) ?? languages[0];
+        var language = (RecordingLanguage.SelectedItem as LanguageChoice)?.Code ?? settings.Language;
+        RecordingLanguage.ItemsSource = languages; RecordingLanguage.SelectedItem = languages.FirstOrDefault(l => l.Code == language) ?? languages[0];
         if (RecordingMode.SelectedIndex == 3) RefreshRecordingApps();
     }
     private void RecordingMode_Changed(object sender, SelectionChangedEventArgs e)
@@ -86,8 +87,12 @@ public sealed partial class MainWindow
                         LiveRecordingText.Text = string.Join("\n", session.Segments.TakeLast(80).Select(s => s.Text));
                         LiveRecordingText.SelectionStart = LiveRecordingText.Text.Length;
                     }
-                    if (e.Type == "clip-completed") recordingPending = Math.Max(0, recordingPending - 1);
-                    LiveRecordingStatus.Text = e.Message + $" · 待处理 {recordingPending} 段";
+                    if (e.Type == "clip-completed")
+                    {
+                        recordingPending = Math.Max(0, recordingPending - 1);
+                        LiveRecordingStatus.Text = recordingPending == 0 ? "已跟上录音，等待下一段声音…" : $"文字已更新 · 待处理 {recordingPending} 段";
+                    }
+                    else LiveRecordingStatus.Text = e.Message + $" · 待处理 {recordingPending} 段";
                 }), cancellation.Token);
             }
             catch (OperationCanceledException) { await RecordingUiAsync(() => LiveRecordingStatus.Text = "转写已停止，录音和已完成文字保留。"); }

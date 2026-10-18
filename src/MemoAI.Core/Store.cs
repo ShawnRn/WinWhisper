@@ -49,7 +49,17 @@ public sealed class Store
     public void DeleteSession(string id)
     {
         using var c = Open(); using var cmd = c.CreateCommand();
-        cmd.CommandText = "DELETE FROM sessions WHERE id=$id"; cmd.Parameters.AddWithValue("$id", id); cmd.ExecuteNonQuery();
+        using var transaction = c.BeginTransaction(); cmd.Transaction = transaction;
+        cmd.CommandText = "DELETE FROM jobs WHERE json_extract(payload,'$.sessionId')=$id; DELETE FROM sessions WHERE id=$id";
+        cmd.Parameters.AddWithValue("$id", id); cmd.ExecuteNonQuery(); transaction.Commit();
+    }
+    public List<JobRecord> GetSessionJobs(string id)
+    {
+        using var c = Open(); using var cmd = c.CreateCommand();
+        cmd.CommandText = "SELECT payload FROM jobs WHERE json_extract(payload,'$.sessionId')=$id"; cmd.Parameters.AddWithValue("$id", id);
+        using var reader = cmd.ExecuteReader(); var result = new List<JobRecord>();
+        while (reader.Read()) result.Add(Json.Read<JobRecord>(reader.GetString(0)));
+        return result;
     }
     public void SaveJob(JobRecord job)
     {

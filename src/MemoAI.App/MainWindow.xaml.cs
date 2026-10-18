@@ -508,8 +508,16 @@ public sealed partial class MainWindow : Window
     private async void Associate_Click(object sender, RoutedEventArgs e) => await SafeAsync(async () => { RequireSession(); var files = await PickFilesAsync(); if (files.Count > 0) { current!.MediaPath = files[0]; current.PlaybackPath = ""; Dirty(); await SaveCurrentAsync(); await OpenSessionAsync(current); } });
     private async void Delete_Click(object sender, RoutedEventArgs e) => await SafeAsync(async () =>
     {
-        RequireSession(); if (!await ConfirmAsync("从媒体库移除？", "会移除本应用中的记录；原始媒体文件保留。", "移除")) return;
-        var session = current!; current = null; dirty = false; Player.Source = null; store.DeleteSession(session.Id); sessions.Remove(session); RefreshLibrary(); ShowPage(LibraryView);
+        RequireSession(); var session = current!;
+        if (!await ConfirmAsync("删除这项内容？", "会删除字幕、对话、任务记录和会话缓存。本应用录制的音频也会删除；从外部导入的原始媒体保留。", "删除")) return;
+        if (aiBusy || recorder is not null && recordingSession?.Id == session.Id || store.GetSessionJobs(session.Id).Any(j => j.State is JobState.Queued or JobState.Running))
+            throw new InvalidOperationException("请先停止这项内容的录音、转写和 AI 任务，再删除。");
+        if (current?.Id == session.Id) { ownedPlayer.Pause(); Player.Source = null; current = null; dirty = false; }
+        var remaining = sessions.Where(s => s.Id != session.Id).ToArray();
+        var index = sessions.IndexOf(session); sessions.Remove(session); RefreshLibrary(); ShowPage(LibraryView);
+        try { await Task.Run(() => { SessionFiles.DeleteOwned(paths, session, remaining); store.DeleteSession(session.Id); }); }
+        catch { if (!sessions.Contains(session)) sessions.Insert(Math.Clamp(index, 0, sessions.Count), session); RefreshLibrary(); throw; }
+        RefreshJobs(); Status("内容、录音及会话缓存已删除，外部原始媒体保留。");
     });
     private void Repair_Click(object sender, RoutedEventArgs e) { if (current is null) return; Snapshot(); current.Segments = new(Subtitles.Repair(current.Segments)); TrackSegments(); RefreshSubtitles(); Dirty(); }
     private async void SeparateBilingual_Click(object sender, RoutedEventArgs e) => await SafeAsync(async () =>

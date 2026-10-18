@@ -5,7 +5,10 @@ using System.Text;
 using System.Text.Json;
 using MemoAI.Core;
 
-var root = args.FirstOrDefault(a => a.StartsWith("--root="))?[7..] ?? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+var repository = new DirectoryInfo(AppContext.BaseDirectory);
+while (repository is not null && !(File.Exists(Path.Combine(repository.FullName, "AGENTS.md")) && Directory.Exists(Path.Combine(repository.FullName, "src", "MemoAI.Core")))) repository = repository.Parent;
+var root = Path.GetFullPath(args.FirstOrDefault(a => a.StartsWith("--root="))?[7..] ?? repository?.FullName
+    ?? throw new ArgumentException("无法定位测试仓库，请显式传入 --root=<repository>。"));
 var run = Path.Combine(root, "artifacts", "tests", DateTime.Now.ToString("yyyyMMdd-HHmmss")); Directory.CreateDirectory(run);
 var results = new List<object>(); var failures = 0;
 async Task Test(string name, Func<Task> action)
@@ -66,6 +69,45 @@ await Test("SQLite persistence, search, folders, jobs and settings survive resta
     var restart = new Store(data); Check(restart.GetSession(session.Id)!.Segments[0].Translation == "你好，世界。", "字幕未持久化");
     Check(restart.GetSessions("Windows", "播客").Count == 1 && restart.GetSessions("Windows", "其他").Count == 0, "搜索或文件夹过滤错误");
     Check(restart.GetJobs().Single().State == JobState.Interrupted && restart.LoadSettings().Backend == ComputeBackend.Cuda, "任务或设置未持久化");
+}));
+await Test("Deleting a recording removes owned audio, caches and jobs while preserving external and shared files", () => Sync(() =>
+{
+    var paths = new AppPaths(Path.Combine(run, "delete-recording"));
+    var recordings = Path.Combine(paths.DataRoot, "recordings"); Directory.CreateDirectory(recordings);
+    var audio = Path.Combine(recordings, "2026-10-18_13-24-59-abcdef.wav");
+    var raw = Path.Combine(recordings, "2026-10-18_13-24-59-abcdef-system.wav");
+    var unrelated = Path.Combine(recordings, "2026-10-18_13-24-59-fedcba.wav");
+    var external = Path.Combine(run, "external-original.wav");
+    foreach (var file in new[] { audio, raw, unrelated, external }) File.WriteAllText(file, "fixture");
+    var recording = new MediaSession { MediaPath = external, RecordingPath = audio };
+    var cache = paths.SessionDirectory(recording.Id); File.WriteAllText(Path.Combine(cache, "checkpoint.json"), "{}");
+    var db = new Store(paths.DataRoot); db.SaveSession(recording); db.SaveJob(new() { SessionId = recording.Id, State = JobState.Completed });
+    Check(db.GetSessionJobs(recording.Id).Count == 1, "会话任务查询错误");
+    SessionFiles.DeleteOwned(paths, recording, []); db.DeleteSession(recording.Id);
+    Check(!File.Exists(audio) && !File.Exists(raw) && !Directory.Exists(cache) && db.GetSession(recording.Id) is null && db.GetSessionJobs(recording.Id).Count == 0, "录音或会话缓存未清理");
+    Check(File.Exists(external) && File.Exists(unrelated), "误删外部或其他录音");
+    File.WriteAllText(audio, "fixture"); File.WriteAllText(raw, "fixture");
+    SessionFiles.DeleteOwned(paths, new() { MediaPath = audio }, [new() { MediaPath = audio }]);
+    Check(File.Exists(audio) && File.Exists(raw), "误删被另一个条目引用的录音");
+    SessionFiles.DeleteOwned(paths, new() { RecordingPath = audio }, [new() { MediaPath = raw }]);
+    Check(!File.Exists(audio) && File.Exists(raw), "误删仍被引用的原始采集音轨");
+    File.WriteAllText(audio, "fixture");
+    var invalid = new MediaSession { Id = "../outside", RecordingPath = audio };
+    var rejected = false; try { SessionFiles.DeleteOwned(paths, invalid, []); } catch (ArgumentException) { rejected = true; }
+    Check(rejected && File.Exists(audio), "未拒绝越界会话 ID");
+    var owner = new MediaSession(); var ownerCache = paths.SessionDirectory(owner.Id);
+    var sharedFile = Path.Combine(ownerCache, "download.mp4"); File.WriteAllText(sharedFile, "fixture");
+    rejected = false; try { SessionFiles.DeleteOwned(paths, owner, [new() { MediaPath = sharedFile }]); } catch (IOException) { rejected = true; }
+    Check(rejected && File.Exists(sharedFile), "误删其他条目引用的缓存媒体");
+    var linked = new MediaSession(); var linkedCache = paths.SessionDirectory(linked.Id);
+    // Junction creation works without the elevated symbolic-link privilege.
+    var linkPath = Path.Combine(linkedCache, "external");
+    var linkCommand = "New-Item -ItemType Junction -Path '" + linkPath.Replace("'", "''") + "' -Target '" + Path.GetDirectoryName(external)!.Replace("'", "''") + "' | Out-Null";
+    var start = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, CreateNoWindow = true };
+    foreach (var argument in new[] { "-NoProfile", "-NonInteractive", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(linkCommand)) }) start.ArgumentList.Add(argument);
+    using (var junction = Process.Start(start)!) { junction.WaitForExit(); Check(junction.ExitCode == 0, "无法创建隔离测试 Junction"); }
+    rejected = false; try { SessionFiles.DeleteOwned(paths, linked, []); } catch (IOException) { rejected = true; }
+    Check(rejected && File.Exists(external) && Directory.Exists(linkedCache), "未拒绝缓存中的链接");
 }));
 await Test("Chinese typography preserves code, links and URLs", () => Sync(() =>
 {

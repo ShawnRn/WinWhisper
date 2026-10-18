@@ -66,8 +66,9 @@ public sealed partial class MainWindow
         var details = new StackPanel { Spacing = 8 };
         var heading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
         heading.Children.Add(new TextBlock { Text = model.Name, FontSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-        var badge = new TextBlock { Text = applied ? "使用中" : installed ? "已下载" : model.Badge, FontSize = 10, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"] };
-        heading.Children.Add(new ContinuousSurface { Background = (Brush)Application.Current.Resources["AccentFillColorTertiaryBrush"], CornerRadius = new CornerRadius(5), Padding = new Thickness(7, 3, 7, 3), Child = badge });
+        var badge = new TextBlock { FontSize = 11, TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"] };
+        SetModelBadge(badge, applied ? "使用中" : installed ? "已下载" : model.Badge);
+        heading.Children.Add(new ContinuousSurface { Background = (Brush)Application.Current.Resources["AccentFillColorTertiaryBrush"], CornerRadius = new CornerRadius(5), MinHeight = 24, Padding = new Thickness(8, 4, 8, 4), VerticalAlignment = VerticalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, Child = badge });
         details.Children.Add(heading);
         details.Children.Add(new TextBlock { Text = model.Subtitle, FontSize = 12, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"] });
         details.Children.Add(new TextBlock { Text = model.Description, Style = (Style)Application.Current.Resources["Muted"], FontSize = 13 });
@@ -78,7 +79,7 @@ public sealed partial class MainWindow
             details.Children.Add(source);
         }
         grid.Children.Add(details);
-        var button = new Button { Content = applied ? "已应用" : installed ? "应用模型" : "下载并应用", IsEnabled = !applied && !modelDownloads.ContainsKey(model.Id), VerticalAlignment = VerticalAlignment.Center, Style = installed ? null : (Style)Application.Current.Resources["AccentButtonStyle"] };
+        var button = new Button { Content = applied ? "已应用" : installed ? "应用模型" : "下载并应用", IsEnabled = !applied && !modelDownloads.ContainsKey(model.Id), VerticalAlignment = VerticalAlignment.Center, Style = (Style)Application.Current.Resources[installed ? "DefaultButtonStyle" : "AccentButtonStyle"] };
         button.Click += async (_, _) => await SafeAsync(async () =>
         {
             if (aiBusy) throw new InvalidOperationException("请等待当前 AI 任务完成后再切换模型。");
@@ -101,7 +102,7 @@ public sealed partial class MainWindow
             if (modelCards.TryGetValue(model.Id, out var card))
             {
                 var installed = StoreModels.IsInstalled(model, settings, paths.ModelRoot); var applied = StoreModels.IsApplied(model, settings, paths.ModelRoot);
-                card.Badge.Text = applied ? "使用中" : installed ? "已下载" : model.Badge;
+                SetModelBadge(card.Badge, applied ? "使用中" : installed ? "已下载" : model.Badge);
                 card.Apply.Content = applied ? "已应用" : installed ? "应用模型" : "下载并应用";
                 card.Apply.IsEnabled = !applied && !modelDownloads.ContainsKey(model.Id);
             }
@@ -125,6 +126,12 @@ public sealed partial class MainWindow
         UpdateAiModelLabel();
         if (!aiBusy) { provider?.Dispose(); provider = null; }
         RefreshModelStoreStates(); Status("模型已应用，下一个任务会使用新模型。");
+    }
+    private static void SetModelBadge(TextBlock badge, string text)
+    {
+        badge.Text = text;
+        // Caps use their visible cap-to-baseline box; Chinese labels retain full CJK line metrics.
+        badge.TextLineBounds = text == "ONNX" ? TextLineBounds.Tight : TextLineBounds.Full;
     }
     private void ApplyStoreModel(StoreModel model)
     {

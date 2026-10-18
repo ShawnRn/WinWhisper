@@ -27,6 +27,26 @@ public sealed partial class MainWindow
             StoreSearch.Text = "阿里"; BuildModelStore();
             result["alibabaModelsVisibleInStore"] = modelCards.Count == 7;
             StoreSearch.Text = ""; StoreCategory.SelectedIndex = 0; BuildModelStore();
+            // Reproduce a preinstalled model at first render, then exercise the
+            // enabled/disabled cycle on the actual generated native template.
+            var installedFixture = Path.Combine(paths.ModelRoot, "installed-model-fixture"); File.WriteAllText(installedFixture, "fixture");
+            settings.SpeakerSegmentationModel = settings.SpeakerEmbeddingModel = installedFixture;
+            // Keep the tested card in the viewport: an offscreen ScrollViewer
+            // child may have a template before its composition brush connects.
+            StoreSearch.Text = "说话人"; BuildModelStore(); ShowPage(ModelStoreView); StoreScroll.ChangeView(null, 0, null, true); StoreCards.UpdateLayout(); await Task.Delay(100);
+            var installedButton = modelCards["speakers"].Apply;
+            var installedPaint = Descendants(installedButton).OfType<ContinuousSurface>().SingleOrDefault(s => s.Name == "G2_ContentPresenter");
+            var keepsContour = !installedButton.IsEnabled && installedPaint?.HasGeometry == true && installedPaint.CornerRadius.TopLeft > 0;
+            var paintIdentity = installedPaint?.PaintIdentity;
+            for (var i = 0; i < 8; i++)
+            {
+                installedButton.IsEnabled = true; VisualStateManager.GoToState(installedButton, "PointerOver", false);
+                installedButton.IsEnabled = false;
+                keepsContour &= installedPaint?.HasGeometry == true && installedPaint.CornerRadius.TopLeft > 0 && ReferenceEquals(installedPaint.PaintIdentity, paintIdentity);
+            }
+            result["installedModelButtonKeepsG2ContourWhenDisabled"] = keepsContour;
+            result["installedButtonSurface"] = $"enabled={installedButton.IsEnabled};loaded={installedPaint?.IsLoaded};size={installedPaint?.ActualWidth}x{installedPaint?.ActualHeight};radius={installedPaint?.CornerRadius};geometry={installedPaint?.HasGeometry}";
+            StoreSearch.Text = ""; BuildModelStore();
             result["settingsContainAboutMetadata"] = Descendants(SettingsContent).OfType<TextBlock>().Any(t => t.Text.Contains("开发者：Shawn Rain") && t.Text.Contains("MIT"));
             ShowPage(RecordView); await Task.Delay(80);
             var recordBounds = RecordingContent.TransformToVisual(RecordView).TransformBounds(new Windows.Foundation.Rect(0, 0, RecordingContent.ActualWidth, RecordingContent.ActualHeight));
