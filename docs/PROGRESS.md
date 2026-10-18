@@ -2,6 +2,7 @@
 
 ## 2026-10-18：GPU 适配与商店入口统一
 
+- 发布后用户恢复窗口到前台，Computer Use 已重新验证并正常关闭旧开发版：录音未启动、两项历史任务均完成。日常 ARM64 目录更新为发布包相同的应用与 ARM64 / x64 Worker，关键文件 SHA-256 一致；重启保留原媒体和字幕。实际窗口核对设置无模型下载区、GPU 选项和 Escape 收起、关于信息为 `0.1.0-preview.1 · Arm64`，商店显示阿里 / NVIDIA 转写模型及独立语音辅助分类，CUDA 运行时状态为已安装。此次未重新运行推理，也不将静态截图作为逐帧无闪烁的证明。
 - 三种离线安装程序已生成，当前用户安装、升级、安装后 UI / 真实视频、本地工具、默认无桌面快捷方式、卸载保留用户文件及注册项清理均通过：Universal `artifacts/installer-tests/20261018-161219-5d1de560`，ARM64 `20261018-161443-4013157c`，x64 `20261018-161921-2748072b`。Universal 自动选取 ARM64；x64 界面为 ARM64 兼容执行。
 - Windows x64 CI 对独立 [x64 包](https://github.com/ShawnRn/WinWhisper/actions/runs/39112211839) 和 [Universal 包](https://github.com/ShawnRn/WinWhisper/actions/runs/39112582083) 的当前用户 / 所有用户安装、升级、包内 CLI、默认快捷方式及卸载检查全部通过。Universal 自动选中 x64 应用与 Worker。CI 未运行 WinUI / GPU 验证；物理 x64 和其他 GPU 仍需各自验收。三个安装包、第三方源码包、验证记录和校验清单的远端 SHA-256 已与本地核对一致。
 - [v0.1.0-preview.1](https://github.com/ShawnRn/WinWhisper/releases/tag/v0.1.0-preview.1) 已于 2026-10-18 公开为 prerelease，包含 Universal / x64 / ARM64 三个离线安装程序、源码包、验证记录和 SHA-256 清单。安装程序未签名，默认当前用户安装、不创建桌面快捷方式。README、AGENTS 与工作流文档已同步。
