@@ -1,0 +1,17 @@
+.tools/
+.vs/
+**/bin/
+**/obj/
+artifacts/
+engines/
+models/
+TestResults/
+*.user
+*.log
+*.db
+*.db-shm
+*.db-wal
+*.pfx
+*.key
+appsettings.local.json
+
