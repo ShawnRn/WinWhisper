@@ -1,6 +1,6 @@
 # MemoAI Native
 
-面向 Windows 11 ARM64 的本地音视频工作台，采用 WinUI 3、.NET 10 和独立推理进程。无需 Memo 账号，不使用 Memo 安装包中的代码或资源。
+面向 Windows 11 ARM64 和 x64 的本地音视频工作台，采用 WinUI 3、.NET 10 和独立推理进程。无需 Memo 账号，不使用 Memo 安装包中的代码或资源。
 
 ## 开发
 

@@ -1,0 +1,56 @@
+[
+  {
+    "id": "win-arm64/whisper-cuda",
+    "version": "b5454",
+    "source": "https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-win-cuda-13.4-arm64.zip",
+    "sha256": "6184ae8887d38ea9add68e883b9c846e7bf562ba1bf619ffc7ee9f8ec7e1699c"
+  },
+  {
+    "id": "win-arm64/whisper-cpu",
+    "version": "b5454",
+    "source": "https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-win-cpu-arm64.zip",
+    "sha256": "28c37e7b598c3d9bbfef94f3bd67f2ee6f12b7c86f3da5edcf5e4308d615ff6d"
+  },
+  {
+    "id": "win-arm64/ffmpeg",
+    "version": "latest-autobuild-2026.10.17.0",
+    "source": "https://github.com/tordona/ffmpeg-win-arm64/releases/download/latest-autobuild-2026.10.17.0/ffmpeg-master-latest-full-shared-win-arm64.7z",
+    "sha256": "c4650ed63d4dfe0ab74a78eae5e5058ffeb323d6983405cbf1b4a0b9248b60dd"
+  },
+  {
+    "id": "win-arm64/yt-dlp",
+    "version": "2026.08.19",
+    "source": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_win_arm64.zip",
+    "sha256": "2ad49db7429a6204721f711a44199a8c9fa8d5df2183dd7fedc4ef6c9e2e50d3"
+  },
+  {
+    "id": "win-arm64/llama-cuda",
+    "version": "b11716",
+    "source": "https://github.com/ggml-org/llama.cpp/releases/download/b11716/llama-b11716-bin-win-cuda-13.4-arm64.zip",
+    "sha256": "ff8b51d0470c82ea01fac0d7850ee57474dc11d887031640109fb9316092cc1e"
+  },
+  {
+    "id": "win-arm64/llama-cuda-runtime",
+    "version": "b11716",
+    "source": "https://github.com/ggml-org/llama.cpp/releases/download/b11716/cudart-llama-bin-win-cuda-13.4-arm64.zip",
+    "sha256": "642dcde8805b3e3165ca710a5443b3b4044b27d96bd3ee3132473988c9bcb774"
+  },
+  {
+    "id": "win-arm64/llama-vulkan",
+    "version": "b11716",
+    "source": "https://github.com/ggml-org/llama.cpp/releases/download/b11716/llama-b11716-bin-win-vulkan-arm64.zip",
+    "sha256": "626be1ec06eb78bf7622cd2dda05c8677c0f755f5fc30085993000315766d529"
+  },
+  {
+    "id": "win-arm64/llama-cpu",
+    "version": "b11716",
+    "source": "https://github.com/ggml-org/llama.cpp/releases/download/b11716/llama-b11716-bin-win-cpu-arm64.zip",
+    "sha256": "c94f661ef26262ab3c02a679eac3e73ead91676db161dc7b57f8966d9eecbf9d"
+  },
+  {
+    "id": "win-arm64/sherpa",
+    "version": "v1.13.8",
+    "source": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-win-arm64-shared-MD-Release.tar.bz2",
+    "sha256": "40fd749779c41e357c4a1382b071970999d4828ceb50b133b1643878ca08ead8"
+  }
+]
