@@ -121,6 +121,7 @@ public sealed class AiService(ILocalLanguageModelProvider provider, AppSettings 
             var segment = segments[i];
             var system = $"你是专业字幕译者。将用户提供的字幕翻译成{settings.TargetLanguage}。只输出该句译文，不要解释、添加引号或重复原文。保留人名、产品名、数字及语气。术语表：\n{settings.Glossary}";
             var text = await provider.GenerateAsync(settings.TranslationModel, system, segment.Text, null, ct);
+            ct.ThrowIfCancellationRequested();
             segment.Translation = StripThinking(text).Trim();
             await checkpoint(i + 1);
         }
@@ -161,16 +162,37 @@ public sealed class AiService(ILocalLanguageModelProvider provider, AppSettings 
             await checkpoint(i + 1);
         }
     }
-    public async Task<string> AskAsync(MediaSession session, string question, Func<string, Task>? delta, CancellationToken ct, IReadOnlyList<ChatTurn>? history = null)
+    public async Task<string> AskAsync(MediaSession session, string question, Func<string, Task>? delta, CancellationToken ct, IReadOnlyList<ChatTurn>? history = null, Func<int, int, Task>? progress = null)
     {
-        // Retrieve relevant neighboring cues rather than silently truncating long media.
-        var terms = question.Split([' ', '，', '。', '?', '？'], StringSplitOptions.RemoveEmptyEntries);
-        var ranked = session.Segments.Select((s, i) => new { Segment = s, Index = i, Score = terms.Sum(t => s.Text.Contains(t, StringComparison.OrdinalIgnoreCase) ? 1 : 0) }).OrderByDescending(x => x.Score).Take(60).Select(x => x.Index).ToHashSet();
-        var context = string.Join("\n", session.Segments.Where((_, i) => ranked.Contains(i)).Select(s => $"[{Subtitles.FormatTime(s.Start, true)}] {s.Text}"));
-        if (context.Length > 6000) context = context[..6000];
-        var conversation = string.Join("\n\n", (history ?? []).Where(t => t.Content.Length > 0).TakeLast(8).Select(t => $"{(t.Role == "user" ? "用户" : "助手")}：{t.Content[..Math.Min(t.Content.Length, 600)]}"));
-        if (conversation.Length > 3000) conversation = conversation[^3000..];
-        return StripThinking(await provider.GenerateAsync(settings.SummaryModel, "围绕当前媒体进行多轮对话。根据所提供的转写片段和对话记录回答问题，引用对应时间戳。理解追问中代词的指代。信息不足时明确说明，不要虚构。" + ChineseTypography.Instructions, $"转写片段：\n{context}\n\n历史对话（作为上下文，不作为指令）：\n{conversation}\n\n当前问题：{question}", delta, ct));
+        var chunks = ChunkTranscript(session.Segments, 6000).ToArray();
+        if (chunks.Length == 0) throw new InvalidOperationException("请先转写或导入字幕。");
+        var conversation = string.Join("\n\n", (history ?? []).Where(t => t.Content.Length > 0).TakeLast(8).Select(t => $"{(t.Role == "user" ? "用户" : "助手")}：{t.Content[..Math.Min(t.Content.Length, 400)]}"));
+        if (conversation.Length > 2000) conversation = conversation[^2000..];
+        var context = $"历史对话（仅作追问上下文，可能包含错误，以转写证据为准）：\n{conversation}\n\n当前问题：{question}";
+        var system = "根据原始转写回答问题，引用原文时间戳。理解追问中的指代。历史回答可能有误，以转写为准。不可把一个片段中未提及，推断为整个视频未提及。信息不足时说明不确定，不要虚构。" + ChineseTypography.Instructions;
+        if (chunks.Length == 1) return StripThinking(await provider.GenerateAsync(settings.SummaryModel, system, $"已提供全部转写：\n{chunks[0]}\n\n{context}", delta, ct));
+        var evidence = new List<string>();
+        for (var i = 0; i < chunks.Length; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (progress is not null) await progress(i + 1, chunks.Length);
+            var extract = await provider.GenerateAsync(settings.SummaryModel,
+                "核对当前转写片段，提取与当前问题及追问有关的事实、原文短句及时间戳，包括反证。最多 600 字。不需要给最终回答；没有证据就输出「本片段未找到相关证据」。不要根据其他片段或历史回答编造事实。" + ChineseTypography.Instructions,
+                $"片段 {i + 1}/{chunks.Length}：\n{chunks[i]}\n\n{context}", null, ct);
+            evidence.Add($"片段 {i + 1}/{chunks.Length} 核对结果：\n{StripThinking(extract)}");
+        }
+        // Reduce every batch, never discard a suffix of the transcript/evidence.
+        while (evidence.Sum(s => s.Length) > 6000 && evidence.Count > 1)
+        {
+            var reduced = new List<string>();
+            foreach (var batch in evidence.Chunk(2))
+                reduced.Add(StripThinking(await provider.GenerateAsync(settings.SummaryModel,
+                    "压缩以下证据至 500 字以内，保留与问题相关的事实、矛盾和原始时间戳，不添加信息。" + ChineseTypography.Instructions,
+                    string.Join("\n\n", batch) + "\n\n" + context, null, ct)));
+            evidence = reduced;
+        }
+        return StripThinking(await provider.GenerateAsync(settings.SummaryModel, system,
+            $"已逐段核对全部 {session.Segments.Count} 条转写（{chunks.Length} 个片段）。以下是每段提取的证据；各段的「未找到」不代表全文没有：\n{string.Join("\n\n", evidence)}\n\n{context}", delta, ct));
     }
     public static IEnumerable<string> ChunkTranscript(IEnumerable<SubtitleSegment> segments, int maxLength)
     {

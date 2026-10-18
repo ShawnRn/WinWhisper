@@ -29,7 +29,13 @@ public sealed partial class MainWindow
     private void LibraryGrid_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (LibraryGrid.ItemsPanelRoot is ItemsWrapGrid panel && e.NewSize.Width > 0)
-        { var columns = Math.Max(1, (int)(e.NewSize.Width / 260)); panel.ItemWidth = Math.Max(180, (e.NewSize.Width - 24) / columns); }
+        { var columns = Math.Max(1, (int)(e.NewSize.Width / 260)); panel.ItemWidth = Math.Max(180, (e.NewSize.Width - 24) / columns); panel.ItemHeight = (panel.ItemWidth - 28) * 9 / 16 + 112; }
+    }
+    private void GridThumbnail_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (sender is not MediaThumbnail cover || e.NewSize.Width <= 0) return;
+        var height = e.NewSize.Width * 9 / 16;
+        if (double.IsNaN(cover.Height) || Math.Abs(cover.Height - height) > .1) cover.Height = height;
     }
     private async void Thumbnail_Loaded(object sender, RoutedEventArgs e)
     { if (sender is MediaThumbnail thumbnail) await thumbnail.LoadAsync(paths); }

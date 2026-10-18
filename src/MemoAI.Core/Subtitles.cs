@@ -36,9 +36,17 @@ public static partial class Subtitles
     }
     private static string Content(SubtitleSegment s, bool bilingual) => (string.IsNullOrWhiteSpace(s.Speaker) ? "" : $"[{s.Speaker}] ") + s.Text + (bilingual && !string.IsNullOrWhiteSpace(s.Translation) ? "\n" + s.Translation : "");
     public static string Export(MediaSession session, string extension, bool bilingual = true)
+        => Export(session, extension, bilingual ? SubtitleTextMode.Bilingual : SubtitleTextMode.Original);
+    public static string Export(MediaSession session, string extension, SubtitleTextMode mode)
     {
         var builder = new StringBuilder();
         var segments = session.Segments.OrderBy(s => s.Start).ToArray();
+        if (mode == SubtitleTextMode.Translation && segments.Any(s => string.IsNullOrWhiteSpace(s.Translation)))
+            throw new InvalidOperationException("部分字幕尚无译文，请先完成翻译再导出纯译文。");
+        string Content(SubtitleSegment cue, bool _) => (string.IsNullOrWhiteSpace(cue.Speaker) ? "" : $"[{cue.Speaker}] ")
+            + ChineseTypography.Apply(mode == SubtitleTextMode.Translation ? cue.Translation : cue.Text)
+            + (mode == SubtitleTextMode.Bilingual && !string.IsNullOrWhiteSpace(cue.Translation) ? "\n" + ChineseTypography.Apply(cue.Translation) : "");
+        var bilingual = mode == SubtitleTextMode.Bilingual;
         switch (extension.TrimStart('.').ToLowerInvariant())
         {
             case "srt": case "vtt":

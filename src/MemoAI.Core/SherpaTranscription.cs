@@ -63,7 +63,7 @@ public sealed class SherpaTranscription(AppPaths paths) : ITranscriptionEngine
         await progress(new("warning", "ONNX 模型使用短音频分段。无词级时间戳的模型显示片段时间；Whisper 的 beam、温度、Silero GGML 参数不适用于此引擎。"));
         using var recognizer = new OfflineRecognizer(config);
         // Keep one model resident for the whole job. Bound audio memory even for multi-hour media.
-        var key = MediaTools.CacheKey(request.MediaPath, settings.TranscriptionModelPath, Json.Write(new { version = "sherpa-1.13.8-segments-v1", model.Sha256, settings.Language, settings.Glossary, settings.EnableVad, begin, finish }));
+        var key = MediaTools.CacheKey(request.MediaPath, settings.TranscriptionModelPath, Json.Write(new { version = "sherpa-1.13.8-word-times-v2", model.Sha256, settings.AutoSegmentEnglish, settings.Language, settings.Glossary, settings.EnableVad, begin, finish }));
         var cache = Path.Combine(request.WorkDirectory, "transcription", key); Directory.CreateDirectory(cache);
         const int chunkSeconds = 20; var count = (int)Math.Ceiling((finish - begin) / chunkSeconds);
         var all = new List<SubtitleSegment>();
@@ -88,8 +88,11 @@ public sealed class SherpaTranscription(AppPaths paths) : ITranscriptionEngine
                     stream.AcceptWaveform(16000, samples[start..end]); recognizer.Decode(stream); ct.ThrowIfCancellationRequested();
                     var result = stream.Result;
                     var text = ChineseTypography.Apply(Regex.Replace(result.Text, @"<\|[^|]*\|>", "").Trim());
-                    if (text.Length > 0) segments.Add(new() { Start = offset + start / 16000d, End = Math.Min(finish, offset + end / 16000d), Text = text });
+                    if (text.Length > 0) segments.Add(new() { Start = offset + start / 16000d, End = Math.Min(finish, offset + end / 16000d), Text = text,
+                        Words = SentenceSegmentation.ReadOnnxWords(result.Tokens, result.Timestamps, result.Durations, offset + start / 16000d, Math.Min(finish, offset + end / 16000d)) });
                 }
+                if (settings.AutoSegmentEnglish && segments.Any(s => SentenceSegmentation.HasReliableWords(s) && SentenceSegmentation.IsEnglish(s.Text)))
+                    segments = SentenceSegmentation.Optimize(segments, await media.DetectSilencesAsync(wav, ct, offset));
                 var pending = checkpoint + ".pending"; await File.WriteAllTextAsync(pending, Json.Write(segments), ct); File.Move(pending, checkpoint, true); File.Delete(wav);
             }
             all.AddRange(segments);

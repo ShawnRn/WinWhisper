@@ -34,7 +34,7 @@
     </ui:ContinuousSurface>
    </ControlTemplate>
    <Style x:Key="SingleSurfaceListItem" TargetType="ListViewItem"><Setter Property="Template" Value="{StaticResource SingleSurfaceItemTemplate}"/><Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="UseSystemFocusVisuals" Value="False"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="6"/><Setter Property="Margin" Value="0,2"/></Style>
-   <Style x:Key="SingleSurfaceGridItem" TargetType="GridViewItem"><Setter Property="Template" Value="{StaticResource SingleSurfaceItemTemplate}"/><Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="UseSystemFocusVisuals" Value="False"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="10"/><Setter Property="Margin" Value="4"/></Style>
+   <Style x:Key="SingleSurfaceGridItem" TargetType="GridViewItem"><Setter Property="VerticalContentAlignment" Value="Top"/><Setter Property="Template" Value="{StaticResource SingleSurfaceItemTemplate}"/><Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="UseSystemFocusVisuals" Value="False"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="10"/><Setter Property="Margin" Value="4"/></Style>
    <Style TargetType="ListViewItem" BasedOn="{StaticResource SingleSurfaceListItem}"/>
    <Style x:Key="Card" TargetType="ui:ContinuousSurface">
     <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />

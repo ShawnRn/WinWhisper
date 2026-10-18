@@ -38,7 +38,7 @@ public sealed partial class MainWindow
     private void ChatBubble_Loaded(object sender, RoutedEventArgs e)
     {
         if (sender is ContinuousSurface border && border.DataContext is ChatTurn turn)
-        { border.Background = turn.Role == "user" ? (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"] : null; border.Margin = new Thickness(turn.Role == "user" ? 20 : 0, 0, 0, 0); }
+        { border.Margin = new Thickness(turn.Role == "user" ? 20 : 0, 0, 0, 0); }
     }
     private void ChatMessages_Loaded(object sender, RoutedEventArgs e)
     {
@@ -87,10 +87,29 @@ public sealed partial class MainWindow
         var cue = current.Segments.FirstOrDefault(s => s.Start <= seconds && s.End > seconds);
         if (cue is not null && SubtitleList.ItemsSource is IEnumerable<SubtitleSegment> displayed && displayed.Contains(cue)) { SubtitleList.SelectedItem = cue; SubtitleList.ScrollIntoView(cue); }
         Player.MediaPlayer.PlaybackSession.Position = TimeSpan.FromSeconds(seconds);
+        Player.MediaPlayer.Play();
         RefreshPlaybackControls();
     }
     private void CopyChat_Click(object sender, RoutedEventArgs e)
-    { if ((sender as FrameworkElement)?.Tag is ChatTurn turn) { var data = new DataPackage(); data.SetText(turn.Content); Clipboard.SetContent(data); if (sender is Button button) button.Content = "已复制"; } }
+    { if ((sender as FrameworkElement)?.Tag is ChatTurn turn) { var data = new DataPackage(); data.SetText(turn.Content); Clipboard.SetContent(data); if (sender is Button { Content: FontIcon icon } button) { icon.Glyph = "\uE73E"; ToolTipService.SetToolTip(button, "已复制"); } } }
+    private void ChatChrome_Entered(object sender, PointerRoutedEventArgs e) => SetChatCopyVisibility((Grid)sender, true);
+    private void ChatChrome_Exited(object sender, PointerRoutedEventArgs e)
+    {
+        var grid = (Grid)sender; var point = e.GetCurrentPoint(grid).Position;
+        if (point.X >= 0 && point.Y >= 0 && point.X < grid.ActualWidth && point.Y < grid.ActualHeight) return;
+        SetChatCopyVisibility(grid, Within(FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject, grid));
+    }
+    private void ChatChrome_Focus(object sender, RoutedEventArgs e)
+    {
+        var grid = (Grid)sender;
+        DispatcherQueue.TryEnqueue(() => SetChatCopyVisibility(grid, Within(FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject, grid)));
+    }
+    private void SetChatCopyVisibility(Grid grid, bool visible)
+    {
+        if (grid.FindName("CopyTurnButton") is not Button button) return;
+        button.Opacity = visible ? 1 : 0; button.IsHitTestVisible = visible;
+        if (!visible && button.Content is FontIcon icon) { icon.Glyph = "\uE8C8"; ToolTipService.SetToolTip(button, "复制消息"); }
+    }
     private void Question_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key != VirtualKey.Enter || questionComposing || Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift).HasFlag(CoreVirtualKeyStates.Down)) return;

@@ -13,6 +13,29 @@ public sealed partial class MainWindow
     private JobRecord? workspaceJob;
     private DateTime lastProgressRefresh;
     private string? cancelRequestedJob;
+    private bool transcriptionFlyoutOpen;
+    private void ToggleTranscriptionSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (transcriptionFlyoutOpen || TranscriptionSettingsButton.IsChecked != true) TranscriptionFlyout.Hide();
+        else TranscriptionFlyout.ShowAt(TranscriptionSettingsButton);
+    }
+    private void CloseTranscriptionSettings_Click(object sender, RoutedEventArgs e) => TranscriptionFlyout.Hide();
+    private void TranscriptionFlyout_Opening(object sender, object e)
+    {
+        TranscriptionFlyout.AreOpenCloseAnimationsEnabled = !settings.ReduceMotion && motionSettings.AnimationsEnabled;
+    }
+    private void TranscriptionFlyout_Opened(object sender, object e)
+    { transcriptionFlyoutOpen = true; TranscriptionSettingsButton.IsChecked = true; }
+    private void TranscriptionFlyout_Closed(object sender, object e)
+    {
+        CloseTranscriptionDropdowns(); transcriptionFlyoutOpen = false; TranscriptionSettingsButton.IsChecked = false;
+    }
+    private void CloseTranscriptionDropdowns(ComboBox? except = null)
+    {
+        foreach (var combo in new[] { TranscriptionModel, TranscriptionLanguage, TranscriptionBackend })
+            if (!ReferenceEquals(combo, except)) combo.IsDropDownOpen = false;
+    }
+    private void TranscriptionDropdown_Opened(object? sender, object e) => CloseTranscriptionDropdowns(sender as ComboBox);
 
     private void LoadTranscriptionOptions()
     {

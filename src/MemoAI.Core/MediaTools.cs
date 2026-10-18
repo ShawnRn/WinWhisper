@@ -33,6 +33,19 @@ public sealed class MediaTools(AppPaths paths)
         Processes.EnsureSuccess(await Processes.RunAsync(Ffmpeg, ["-hide_banner", "-nostdin", "-y", "-i", input, "-vf", "scale=-2:720", "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-c:a", "aac", "-movflags", "+faststart", pending], ct: ct), "生成播放代理");
         File.Move(pending, proxy, true); return proxy;
     }
+    public async Task<List<AudioSilence>> DetectSilencesAsync(string input, CancellationToken ct, double offset = 0)
+    {
+        var result = await Processes.RunAsync(Ffmpeg, ["-hide_banner", "-nostdin", "-i", input, "-vn", "-af", "silencedetect=noise=-35dB:d=0.3", "-f", "null", "-"], ct: ct);
+        Processes.EnsureSuccess(result, "检测音频停顿");
+        var pauses = new List<AudioSilence>(); double? start = null;
+        foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(result.Error, @"silence_(start|end):\s*([\d.]+)"))
+        {
+            var time = offset + double.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture);
+            if (match.Groups[1].Value == "start") start = time;
+            else if (start.HasValue) { pauses.Add(new(start.Value, time)); start = null; }
+        }
+        return pauses;
+    }
     public async Task<float[]> WaveformAsync(string input, string workDirectory, CancellationToken ct)
     {
         var cache = Path.Combine(workDirectory, "waveform.json");

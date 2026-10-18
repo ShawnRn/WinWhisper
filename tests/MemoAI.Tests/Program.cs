@@ -129,6 +129,59 @@ await Test("Chat history persists and follow-up includes previous turns", async 
     await new AiService(model, new()).AskAsync(restored, "它的优势是什么？", null, CancellationToken.None, restored.Chat.ToArray());
     Check(model.LastPrompt.Contains("主要话题是什么") && model.LastPrompt.Contains("本地 AI") && model.LastSystem.Contains("直角引号"), "对话历史或默认中文规范未进入请求");
 });
+await Test("Smart English punctuation is idempotent and leaves machine content intact", () => Sync(() =>
+{
+    var input = "SpaceX's rocket, it's ready. The engineers' plan: \"Go now\", 'she said'. 'Twas the '90s. 中文'引号'。";
+    var actual = ChineseTypography.Apply(input);
+    Check(actual == "SpaceX’s rocket, it’s ready. The engineers’ plan: “Go now”, ‘she said’. ’Twas the ’90s. 中文「引号」。", actual);
+    Check(ChineseTypography.Apply(actual) == actual, "弯引号不幂等");
+    Check(ChineseTypography.Apply("'James' said 'yes'.") == "‘James’ said ‘yes’.", "以 s 结尾的引文被当成所有格");
+    foreach (var machine in new[] { "`it's 'raw'`", "```json\n{\"x\":\"it's\"}\n```", "https://example.com/it's", @"C:\Users\it's\file.txt", "{\"text\":\"it's\"}" })
+        Check(ChineseTypography.Apply(machine) == machine, "机器内容被改写：" + machine);
+}));
+await Test("Subtitle export distinguishes original, translation and bilingual without shifting time", () => Sync(() =>
+{
+    foreach (var format in new[] { "srt", "vtt", "txt", "ass" })
+    {
+        var original = Subtitles.Export(session, format, SubtitleTextMode.Original);
+        var translated = Subtitles.Export(session, format, SubtitleTextMode.Translation);
+        var both = Subtitles.Export(session, format, SubtitleTextMode.Bilingual);
+        Check(original.Contains("Hello, world.") && !original.Contains("你好"), "原文混入译文");
+        Check(translated.Contains("你好") && !translated.Contains("Hello"), "译文混入原文");
+        Check(both.Contains("Hello") && both.Contains("你好"), "双语丢失内容");
+        if (format is "srt" or "vtt") Check(Subtitles.Parse(translated)[1].End == 11.999, "译文时间发生变化");
+    }
+    try { Subtitles.Export(new() { Segments = [new() { Text = "untranslated" }] }, "txt", SubtitleTextMode.Translation); throw new Exception("未翻译内容静默丢失"); } catch (InvalidOperationException) { }
+}));
+await Test("Sentence boundaries use original word times and reject fabricated alignment or paraphrase", () => Sync(() =>
+{
+    var cue = new SubtitleSegment { Start = 0, End = 5, Text = "hello everyone welcome to Texas", Words = [new("hello", .2, .5), new(" everyone", .5, 1.5), new(" welcome", 2.4, 3), new(" to", 3, 3.4), new(" Texas", 3.4, 5)] };
+    var restored = SentenceSegmentation.RestorePunctuation(cue, "Hello everyone. Welcome to Texas!");
+    Check(SentenceSegmentation.HasReliableWords(restored), "恢复标点丢失原词时间戳");
+    var output = SentenceSegmentation.Optimize([restored], [new(1.5, 2.4)]);
+    Check(output.Count == 2 && output[0].Start == .2 && output[0].End == 1.5 && output[1].Start == 2.4 && output[1].End == 5, "没有在实际词边界切分");
+    Check(string.Join(" ", output.Select(s => s.Text)) == "Hello everyone. Welcome to Texas!", "断句丢词");
+    try { SentenceSegmentation.RestorePunctuation(cue, "Hello everyone. Welcome to California!"); throw new Exception("改写单词被接受"); } catch (InvalidDataException) { }
+    var coarse = new SubtitleSegment { Start = 10, End = 20, Text = "no word times do not guess" };
+    var unchanged = SentenceSegmentation.Optimize([coarse]); Check(unchanged.Count == 1 && unchanged[0].Start == 10 && unchanged[0].End == 20, "伪造了词对齐");
+    cue.Translation = "已有译文"; Check(SentenceSegmentation.Optimize([cue]).Single().Translation == "已有译文", "已有译文错位");
+    cue.Translation = ""; cue.Words[2] = cue.Words[2] with { Start = .1 }; Check(!SentenceSegmentation.HasReliableWords(cue), "接受了倒序时间戳");
+    using var tokens = JsonDocument.Parse("{\"tokens\":[{\"id\":50363,\"text\":\"[_BEG_]\",\"offsets\":{\"from\":0,\"to\":0}},{\"id\":1,\"text\":\" Space\",\"offsets\":{\"from\":100,\"to\":200}},{\"id\":2,\"text\":\"X's\",\"offsets\":{\"from\":200,\"to\":500}}]}");
+    var words = SentenceSegmentation.ReadWhisperWords(tokens.RootElement, 30, 40); Check(words.Single() == new TimedWord(" SpaceX’s", 30.1, 30.5), "BPE 词片合并或绝对时间错误");
+}));
+await Test("Translation API sends only explicit text and does not leak error bodies", async () =>
+{
+    var fake = new TranslationHandler(); using var api = new TranslationApi("https://example.invalid/v1", "fixture-secret", fake);
+    var value = await api.GenerateAsync("test-model", "translate", "It’s local text.", null, CancellationToken.None);
+    using var body = JsonDocument.Parse(fake.Body);
+    Check(value == "译文" && fake.Path == "/v1/chat/completions" && body.RootElement.GetProperty("messages")[1].GetProperty("content").GetString() == "It’s local text." && fake.Auth == "Bearer fixture-secret", "请求协议错误");
+    Check(!fake.Body.Contains("MediaPath") && !fake.Body.Contains("fixture-secret"), "凭据或媒体路径出现在载荷");
+    fake.Fail = true;
+    try { await api.GenerateAsync("test", "s", "p", null, CancellationToken.None); throw new Exception("未拒绝错误"); } catch (HttpRequestException ex) { Check(!ex.Message.Contains("private-error"), "泄漏服务响应体"); }
+    foreach (var address in new[] { "http://external.invalid/v1", "https://user:secret@example.invalid/v1", "https://example.invalid/v1?key=secret" })
+        try { TranslationApi.ValidateEndpoint(address); throw new Exception("地址未拒绝"); } catch (ArgumentException) { }
+    Check(TranslationApi.ValidateEndpoint("http://127.0.0.1:1234/v1").AbsolutePath == "/v1/chat/completions", "本地兼容 API 不可用");
+});
 await Test("Per-media transcription settings persist and snapshot independently", () => Sync(() =>
 {
     var defaults = new AppSettings { TranscriptionModelPath = "global.bin", Language = "auto" };
@@ -140,6 +193,14 @@ await Test("Per-media transcription settings persist and snapshot independently"
     Check(defaults.Language == "auto" && defaults.TranscriptionModelPath == "global.bin", "媒体配置污染了全局默认值");
     options.ChunkSeconds = 0; try { options.ApplyTo(defaults); throw new Exception("无效分块参数未拒绝"); } catch (ArgumentException) { }
 }));
+await Test("Questions inspect all transcript chunks including late evidence", async () =>
+{
+    var model = new FakeModel(); var media = new MediaSession { Segments = new(Enumerable.Range(0, 300).Select(i => new SubtitleSegment { Start = i * 5, End = i * 5 + 4, Text = new string('a', 110) + (i == 299 ? " delivery in 2028 END_EVIDENCE" : " cue " + i) })) };
+    await new AiService(model, new()).AskAsync(media, "交付时间是哪年？", null, CancellationToken.None);
+    Check(model.Prompts.Any(p => p.Contains("END_EVIDENCE")), "最后一段转写没有进入任何模型请求");
+    Check(Enumerable.Range(0, 299).All(i => model.Prompts.Any(p => p.Contains("cue " + i + "\n"))), "中间转写被截断");
+    Check(model.LastPrompt.Contains("全部 300 条转写"), "最终回答没有完整核对范围");
+});
 await Test("Online download browser selection is explicit and secrets are not logged", () => Sync(() =>
 {
     var plain = OnlineDownloads.Arguments("https://www.youtube.com/watch?v=fixture", "output", "ffmpeg", "deno.exe", new());
@@ -353,6 +414,7 @@ if (args.Contains("--integration"))
             var transcript = string.Join(" ", completed.Segments!.Select(s => s.Text));
             Check(transcript.Contains("country", StringComparison.OrdinalIgnoreCase) && transcript.Contains("Americans", StringComparison.OrdinalIgnoreCase), "转写没有识别测试音频");
             Check(completed.Backend == backend.ToString(), "实际后端错误");
+            Check(completed.Segments!.Any(SentenceSegmentation.HasReliableWords) && completed.Segments.All(s => s.End > s.Start && s.Start >= 0), "真实模型词时间戳未保留或断句时间无效");
             benchmark.Add(new { backend = completed.Backend, completed.Device, completed.ElapsedSeconds, completed.RealTimeFactor, wallSeconds = watch.Elapsed.TotalSeconds, transcript });
             await File.WriteAllTextAsync(Path.Combine(work, "events.json"), Json.Write(events));
             var cache = Directory.GetFiles(work, "*.segments.json", SearchOption.AllDirectories); Check(cache.Length == 1, "没有生成恢复检查点");
@@ -482,8 +544,19 @@ sealed class FakeModel : ILocalLanguageModelProvider
 {
     public int Calls;
     public string LastPrompt = "", LastSystem = "";
+    public List<string> Prompts = [];
     public Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<string>>(["test"]);
-    public Task<string> GenerateAsync(string model, string system, string prompt, Func<string, Task>? onDelta, CancellationToken ct) { ct.ThrowIfCancellationRequested(); Calls++; LastPrompt = prompt; LastSystem = system; return Task.FromResult("译文"); }
+    public Task<string> GenerateAsync(string model, string system, string prompt, Func<string, Task>? onDelta, CancellationToken ct) { ct.ThrowIfCancellationRequested(); Calls++; Prompts.Add(prompt); LastPrompt = prompt; LastSystem = system; return Task.FromResult("译文"); }
+}
+
+sealed class TranslationHandler : HttpMessageHandler
+{
+    public string Path = "", Body = "", Auth = ""; public bool Fail;
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        Path = request.RequestUri!.AbsolutePath; Body = await request.Content!.ReadAsStringAsync(cancellationToken); Auth = request.Headers.Authorization!.ToString();
+        return new(Fail ? HttpStatusCode.BadRequest : HttpStatusCode.OK) { Content = new StringContent(Fail ? "private-error fixture-secret" : "{\"choices\":[{\"message\":{\"content\":\"译文\"}}]}") };
+    }
 }
 
 sealed class DownloadHandler(byte[] data) : HttpMessageHandler

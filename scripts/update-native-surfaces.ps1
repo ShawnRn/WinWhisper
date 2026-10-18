@@ -70,6 +70,18 @@ foreach($style in $styles){
         foreach($node in $nodes){
             $serial++;$name=$node.GetAttribute('Name',$xns)
             if(!$name){$name='NativePaintPart'+$serial;[void]$node.SetAttribute('Name',$xns,$name)}
+            if($template.GetAttribute('TargetType') -eq 'ComboBox' -and $name -eq 'PopupBorder'){
+                # ComboBox::SetupElementPopup directly resolves Border.Child as
+                # ScrollViewer and its Content as ItemsPresenter. Keep both.
+                $background=$output.CreateElement('Border.Background',$ns)
+                $paint=$output.CreateElement('ui','ContinuousPopupBrush',$ui)
+                $paint.SetAttribute('Owner','{Binding ElementName=PopupBorder}')
+                $paint.SetAttribute('Fill',$node.GetAttribute('Background'));$paint.SetAttribute('Stroke',$node.GetAttribute('BorderBrush'))
+                $paint.SetAttribute('Radius',$node.GetAttribute('CornerRadius'));$paint.SetAttribute('Thickness',$node.GetAttribute('BorderThickness'))
+                [void]$background.AppendChild($paint);[void]$node.PrependChild($background)
+                $node.RemoveAttribute('Background');$node.RemoveAttribute('BorderBrush');$node.SetAttribute('CornerRadius','0');$node.SetAttribute('BackgroundSizing','OuterBorderEdge')
+                continue
+            }
             # NavigationView animates this UIElement's composition visual directly.
             # Keep the name on the painted surface itself, not on an invisible sibling.
             # NavigationViewHelper.h explicitly resolves UIElement, not Rectangle.
@@ -167,4 +179,8 @@ New-Item -ItemType Directory -Path $licenseDirectory -Force | Out-Null
 $packageRoot=Split-Path (Split-Path (Split-Path (Split-Path (Split-Path $ResourceSource -Parent) -Parent) -Parent) -Parent) -Parent
 Copy-Item -LiteralPath (Join-Path $packageRoot 'license.txt') -Destination (Join-Path $licenseDirectory 'WindowsAppSDK.txt') -Force
 Copy-Item -LiteralPath (Join-Path $packageRoot 'NOTICE.txt') -Destination (Join-Path $licenseDirectory 'WindowsAppSDK-NOTICE.txt') -Force
+# Copy-Item preserves the upstream timestamp. The license is a declared build
+# output: leaving its old timestamp would regenerate every native template on
+# every build, invalidating XAML compilation even when nothing changed.
+(Get-Item -LiteralPath (Join-Path $licenseDirectory 'WindowsAppSDK.txt')).LastWriteTimeUtc = [DateTime]::UtcNow
 Write-Host "Generated $serial initial-frame surfaces in $($styles.Count) native resources."

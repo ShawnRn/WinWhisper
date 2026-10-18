@@ -46,6 +46,12 @@ public sealed partial class MainWindow
             // child may have a template before its composition brush connects.
             StoreSearch.Text = "说话人"; BuildModelStore(); ShowPage(ModelStoreView); StoreScroll.ChangeView(null, 0, null, true); StoreCards.UpdateLayout(); await Task.Delay(100);
             var installedButton = modelCards["speakers"].Apply;
+            for (var attempt = 0; attempt < 30; attempt++)
+            {
+                StoreCards.UpdateLayout(); installedButton = modelCards["speakers"].Apply; installedButton.ApplyTemplate();
+                if (installedButton.IsLoaded && installedButton.ActualWidth > 0) break;
+                await Task.Delay(50);
+            }
             var installedPaint = Descendants(installedButton).OfType<ContinuousSurface>().SingleOrDefault(s => s.Name == "G2_ContentPresenter");
             var keepsContour = !installedButton.IsEnabled && installedPaint?.HasGeometry == true && installedPaint.CornerRadius.TopLeft > 0;
             var paintIdentity = installedPaint?.PaintIdentity;
@@ -56,7 +62,7 @@ public sealed partial class MainWindow
                 keepsContour &= installedPaint?.HasGeometry == true && installedPaint.CornerRadius.TopLeft > 0 && ReferenceEquals(installedPaint.PaintIdentity, paintIdentity);
             }
             result["installedModelButtonKeepsG2ContourWhenDisabled"] = keepsContour;
-            result["installedButtonSurface"] = $"enabled={installedButton.IsEnabled};loaded={installedPaint?.IsLoaded};size={installedPaint?.ActualWidth}x{installedPaint?.ActualHeight};radius={installedPaint?.CornerRadius};geometry={installedPaint?.HasGeometry}";
+            result["installedButtonSurface"] = $"enabled={installedButton.IsEnabled};loaded={installedPaint?.IsLoaded};size={installedPaint?.ActualWidth}x{installedPaint?.ActualHeight};radius={installedPaint?.CornerRadius};geometry={installedPaint?.HasGeometry};view={ModelStoreView.Visibility}/{ModelStoreView.IsLoaded};cards={StoreCards.IsLoaded}/{StoreCards.ActualHeight};current={ReferenceEquals(installedButton, modelCards["speakers"].Apply)}";
             StoreSearch.Text = ""; StoreCategory.SelectedIndex = 0; BuildModelStore();
             result["settingsContainAboutMetadata"] = Descendants(SettingsContent).OfType<TextBlock>().Any(t => t.Text.Contains("开发者：Shawn Rain") && t.Text.Contains("MIT"));
             ShowPage(RecordView); await Task.Delay(80);
@@ -83,6 +89,21 @@ public sealed partial class MainWindow
             result["navigationBlankAreaIsHitTestable"] = Microsoft.UI.Xaml.Media.VisualTreeHelper.FindElementsInHostCoordinates(navBlankPoint, Root).Contains(NavRecord);
             result["navigationDoesNotStartRecordingOrDownload"] = recorder is null && linkCancellation is null;
             result["bottomStatusBarRemoved"] = Root.RowDefinitions.Count == 2;
+            var noticesFit = true;
+            foreach (var width in new[] { 800, 1320, 1500 })
+            {
+                AppWindow.Resize(new Windows.Graphics.SizeInt32(width, 980)); await Task.Delay(100);
+                foreach (var page in new UIElement[] { LibraryView, WorkspaceView })
+                {
+                    ShowPage(page); Status(string.Concat(Enumerable.Repeat("内容、录音及会话缓存已删除，外部原始媒体保留。", 8))); ShellLayout.UpdateLayout();
+                    var noticeBounds = OperationNotice.TransformToVisual(ShellLayout).TransformBounds(new Windows.Foundation.Rect(0, 0, OperationNotice.ActualWidth, OperationNotice.ActualHeight));
+                    var pageY = PageHost.TransformToVisual(ShellLayout).TransformPoint(new Windows.Foundation.Point()).Y;
+                    noticesFit &= noticeBounds.Bottom <= pageY + 1 && OperationMessage.ActualHeight > 20 && DismissOperationNotice.ActualWidth >= 28;
+                    DismissOperationNotice_Click(this, new()); ShellLayout.UpdateLayout();
+                    noticesFit &= OperationNotice.Visibility == Visibility.Collapsed && PageHost.TransformToVisual(ShellLayout).TransformPoint(new Windows.Foundation.Point()).Y < 1;
+                }
+            }
+            result["notificationsWrapAndReserveSpaceAcrossPagesAndWidths"] = noticesFit;
             var wavePath = Path.Combine(paths.DataRoot, "playback-fixture.wav");
             using (var wave = new BinaryWriter(File.Create(wavePath)))
             {
@@ -95,12 +116,23 @@ public sealed partial class MainWindow
             AiToggle.IsChecked = true; AiToggle_Click(this, new()); await Task.Delay(120);
             for (var i = 0; i < 100 && Player.MediaPlayer.PlaybackSession.NaturalDuration.TotalSeconds == 0; i++) await Task.Delay(20);
             result["nativePlaybackOpensRealMedia"] = Player.MediaPlayer.PlaybackSession.NaturalDuration.TotalSeconds > 0.9;
+            var nextCue = new SubtitleSegment { Start = .35, End = 1, Text = "播放跟随" }; fixture.Segments[0].End = .35; fixture.Segments.Add(nextCue); RefreshSubtitles();
+            ChatTimestamp_Click(this, TimeSpan.FromSeconds(.5)); await Task.Delay(80); PlaybackTick(this, new());
+            result["timestampStartsPlayingAndSelectionFollowsWithoutSeekingBack"] = Player.MediaPlayer.PlaybackSession.PlaybackState == Windows.Media.Playback.MediaPlaybackState.Playing && ReferenceEquals(SubtitleList.SelectedItem, nextCue) && Player.MediaPlayer.PlaybackSession.Position.TotalSeconds > .5;
+            Player.MediaPlayer.Pause(); fixture.Segments.Remove(nextCue); fixture.Segments[0].End = 1; RefreshSubtitles();
             result["workspaceSelectsLibrary"] = NavLibrary.IsSelected;
             TranscriptionFlyout.ShowAt(TranscriptionSettingsButton); await Task.Delay(120);
             DependencyObject? flyoutParent = TranscriptionSettingsPanel;
             while (flyoutParent is not null && flyoutParent is not FlyoutPresenter) flyoutParent = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(flyoutParent);
             result["transcriptionSettingsFitFlyout"] = flyoutParent is FlyoutPresenter presenter && presenter.ActualWidth >= TranscriptionSettingsPanel.ActualWidth;
-            TranscriptionFlyout.Hide();
+            TranscriptionLanguage.IsDropDownOpen = true; await Task.Delay(200);
+            var popupBorders = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(Root.XamlRoot).SelectMany(p => new[] { p.Child }.Concat(Descendants(p.Child))).OfType<Border>().Where(b => b.Name == "PopupBorder").ToArray();
+            result["comboPopupDetails"] = string.Join(";", popupBorders.Select(b => $"{b.Child?.GetType().Name}/{(b.Child as ScrollViewer)?.Content?.GetType().Name}/{b.Background?.GetType().Name}/owner={ReferenceEquals((b.Background as ContinuousPopupBrush)?.Owner, b)}"));
+            result["comboPopupPreservesNativeContentContract"] = popupBorders.Any(b => b is { Child: ScrollViewer { Content: ItemsPresenter }, Background: ContinuousPopupBrush paint } && ReferenceEquals(paint.Owner, b));
+            TranscriptionBackend.IsDropDownOpen = true; await Task.Delay(200);
+            result["transcriptionDropdownsCloseSiblings"] = TranscriptionBackend.IsDropDownOpen && !TranscriptionLanguage.IsDropDownOpen;
+            CloseTranscriptionSettings_Click(this, new()); await Task.Delay(250);
+            result["settingsCloseResetsToggleAndChildDropdowns"] = !transcriptionFlyoutOpen && TranscriptionSettingsButton.IsChecked != true && !TranscriptionBackend.IsDropDownOpen;
             await AiService.GpuGate.WaitAsync();
             try
             {
@@ -169,6 +201,20 @@ public sealed partial class MainWindow
             // A virtualized container can already be measured while its surface is unloaded.
             // Check selection layering here; live surface painting is checked below on the workspace.
             result["gridUsesSingleStateSurface"] = gridSurfaces.Length == 1 && !gridTree.OfType<Microsoft.UI.Xaml.Controls.Primitives.GridViewItemPresenter>().Any();
+            var longTitle = new MediaSession { Title = "这是一段用于验证两行标题与短标题在同一行保持封面尺寸和元数据基线一致的很长的标题" };
+            sessions.Add(longTitle); RefreshLibrary(); LibraryGrid.UpdateLayout(); await Task.Delay(100);
+            gridItem = LibraryGrid.ContainerFromItem(fixture) as GridViewItem;
+            var secondItem = LibraryGrid.ContainerFromItem(longTitle) as GridViewItem;
+            var firstCover = gridItem is null ? null : Descendants(gridItem).OfType<MediaThumbnail>().FirstOrDefault();
+            var secondCover = secondItem is null ? null : Descendants(secondItem).OfType<MediaThumbnail>().FirstOrDefault();
+            var firstMeta = gridItem is null ? null : Descendants(gridItem).OfType<TextBlock>().FirstOrDefault(t => t.Name == "GridMediaMeta");
+            var secondMeta = secondItem is null ? null : Descendants(secondItem).OfType<TextBlock>().FirstOrDefault(t => t.Name == "GridMediaMeta");
+            result["libraryCardsAlignShortAndLongTitlesWithSameAspect"] = firstCover is not null && secondCover is not null && firstMeta is not null && secondMeta is not null
+                && Math.Abs(firstCover.ActualWidth / firstCover.ActualHeight - 16d / 9) < .01 && Math.Abs(firstCover.ActualHeight - secondCover.ActualHeight) < 1
+                && Math.Abs(firstCover.TransformToVisual(LibraryGrid).TransformPoint(new()).Y - secondCover.TransformToVisual(LibraryGrid).TransformPoint(new()).Y) < 1
+                && Math.Abs(firstMeta.TransformToVisual(LibraryGrid).TransformPoint(new()).Y - secondMeta.TransformToVisual(LibraryGrid).TransformPoint(new()).Y) < 1;
+            result["libraryCardAlignmentDetails"] = $"first={firstCover?.ActualWidth}x{firstCover?.ActualHeight}/{firstMeta?.ActualHeight};second={secondCover?.ActualWidth}x{secondCover?.ActualHeight}/{secondMeta?.ActualHeight}";
+            sessions.Remove(longTitle); RefreshLibrary();
             result["recentHostDoesNotDrawOuterSelectionSurface"] = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(RecentHost, 0) is ContentPresenter;
             result["libraryGridPersistsModeAndSelection"] = LibraryGrid.Visibility == Visibility.Visible && LibraryGrid.SelectedItems.Contains(fixture) && store.LoadSettings().LibraryViewMode == "Grid";
             LibrarySearch.Text = fixture.Title;
@@ -196,27 +242,32 @@ public sealed partial class MainWindow
             settings.ReduceMotion = reduceMotion;
             result["bundledTypographyConfigured"] = SessionTitle.FontFamily.Source.Contains("NotoSansSC") && File.Exists(Path.Combine(AppContext.BaseDirectory, "Assets", "Fonts", "NotoSansSC.ttf"));
 
-            result["continuousCornersAppliedWithoutErrors"] = TranscriptionProgressCard.HasGeometry && ShellSurface.HasGeometry;
+            result["continuousCornersAppliedWithoutErrors"] = TranscriptionProgressCard.HasGeometry;
             var controls = ContinuousCorners.CornerControls(100, 12);
-            var startTangent = 3 * (controls[1] - controls[0]); var endTangent = 3 * (controls[3] - controls[2]);
-            var startSecond = 6 * (controls[2] - 2 * controls[1] + controls[0]); var endSecond = 6 * (controls[3] - 2 * controls[2] + controls[1]);
+            var startTangent = 3 * (controls[1] - controls[0]); var endTangent = 3 * (controls[6] - controls[5]);
+            var startSecond = 6 * (controls[2] - 2 * controls[1] + controls[0]); var endSecond = 6 * (controls[6] - 2 * controls[5] + controls[4]);
             float Cross(System.Numerics.Vector2 a, System.Numerics.Vector2 b) => a.X * b.Y - a.Y * b.X;
             result["g2CornersHaveEdgeTangentsAndZeroEndpointCurvature"] = startTangent.X > 0 && startTangent.Y == 0 && endTangent.Y > 0 && endTangent.X == 0 && Cross(startTangent, startSecond) == 0 && Cross(endTangent, endSecond) == 0;
-            result["continuousCornersKeepExpectedDiagonalRoundness"] = Math.Abs(ContinuousCorners.CornerExtent(12, 100) / 8 - 12 * (1 - Math.Sqrt(.5))) < .001;
+            var rounded = ContinuousCorners.CornerControls(100, ContinuousCorners.CornerExtent(18, 31));
+            result["continuousCornersKeepExpectedDiagonalRoundness"] = Math.Abs(100 - rounded[3].X - 18 * (1 - Math.Sqrt(.5))) < .001;
+            var midLeft = 3 * (controls[3] - controls[2]); var midRight = 3 * (controls[4] - controls[3]);
+            var leftSecond = 6 * (controls[3] - 2 * controls[2] + controls[1]); var rightSecond = 6 * (controls[5] - 2 * controls[4] + controls[3]);
+            result["continuousCornersKeepCurvatureAcrossBothArcs"] = (midLeft - midRight).Length() < .001 && Math.Abs(Cross(midLeft, leftSecond) - Cross(midRight, rightSecond)) < .01;
             var originalTheme = Root.RequestedTheme;
             Root.RequestedTheme = ElementTheme.Light; await Task.Delay(100);
             var lightBrush = TranscriptionProgressCard.Background as Microsoft.UI.Xaml.Media.SolidColorBrush;
             var lightColor = lightBrush?.Color;
-            var lightShell = (ShellSurface.Background as Microsoft.UI.Xaml.Media.SolidColorBrush)?.Color;
+            var lightShell = (StableBackground.Background as Microsoft.UI.Xaml.Media.SolidColorBrush)?.Color;
             Root.RequestedTheme = ElementTheme.Dark; await Task.Delay(100);
             var darkBrush = TranscriptionProgressCard.Background as Microsoft.UI.Xaml.Media.SolidColorBrush;
             result["continuousSurfaceTracksTheme"] = lightColor.HasValue && darkBrush is not null && lightColor.Value != darkBrush.Color;
-            var darkShell = (ShellSurface.Background as Microsoft.UI.Xaml.Media.SolidColorBrush)?.Color;
+            var darkShell = (StableBackground.Background as Microsoft.UI.Xaml.Media.SolidColorBrush)?.Color;
             result["shellSurfaceTracksTheme"] = lightShell.HasValue && darkShell.HasValue && lightShell != darkShell;
             Root.RequestedTheme = originalTheme; await Task.Delay(100);
-            var idleGeometry = ShellSurface.GeometryUpdates; var idleConnections = ShellSurface.Connections; var idlePaint = ShellSurface.PaintIdentity;
+            var idleGeometry = TranscriptionProgressCard.GeometryUpdates; var idleConnections = TranscriptionProgressCard.Connections; var idlePaint = TranscriptionProgressCard.PaintIdentity;
             await Task.Delay(800); // Includes several playback timer ticks with no user action.
-            result["idleBackgroundDoesNotRebuildGeometryOrReconnect"] = ShellSurface.GeometryUpdates == idleGeometry && ShellSurface.Connections == idleConnections && ReferenceEquals(idlePaint, ShellSurface.PaintIdentity);
+            result["idleBackgroundDoesNotRebuildGeometryOrReconnect"] = TranscriptionProgressCard.GeometryUpdates == idleGeometry && TranscriptionProgressCard.Connections == idleConnections && ReferenceEquals(idlePaint, TranscriptionProgressCard.PaintIdentity);
+            result["defaultBackgroundIsNativeSolidWithoutOuterCompositionSurface"] = SystemBackdrop is null && StableBackground.Visibility == Visibility.Visible && ShellSurface.Background is null;
             StoreCategory.SelectedIndex = 1; BuildModelStore(); ShowPage(ModelStoreView);
             await Task.Delay(100); // Let the real WinUI layout establish the scroll extent.
             StoreScroll.ChangeView(null, StoreScroll.ScrollableHeight, null, true);

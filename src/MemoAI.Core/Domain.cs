@@ -21,6 +21,8 @@ public static class Json
 public enum ComputeBackend { Auto, Cuda, Vulkan, Cpu }
 public enum JobState { Queued, Running, Completed, Cancelled, Failed, Interrupted }
 public enum LanguageModelKind { Ollama, BuiltIn }
+public enum SubtitleTextMode { Bilingual, Original, Translation }
+public sealed record TimedWord(string Text, double Start, double End);
 
 public partial class SubtitleSegment : ObservableObject
 {
@@ -30,8 +32,9 @@ public partial class SubtitleSegment : ObservableObject
     [ObservableProperty] private string text = "";
     [ObservableProperty] private string translation = "";
     [ObservableProperty] private string speaker = "";
+    public List<TimedWord> Words { get; set; } = [];
     [JsonIgnore] public string TimeLabel => $"{TimeSpan.FromSeconds(Math.Max(0, Start)):hh\\:mm\\:ss} → {TimeSpan.FromSeconds(Math.Max(0, End)):hh\\:mm\\:ss}";
-    public SubtitleSegment Copy() => new() { Id = Id, Start = Start, End = End, Text = Text, Translation = Translation, Speaker = Speaker };
+    public SubtitleSegment Copy() => new() { Id = Id, Start = Start, End = End, Text = Text, Translation = Translation, Speaker = Speaker, Words = [..Words] };
 }
 
 public partial class MediaSession : ObservableObject
@@ -70,6 +73,10 @@ public sealed class AppSettings
     public string TranscriptionModelPath { get; set; } = "";
     public string Language { get; set; } = "auto";
     public string TargetLanguage { get; set; } = "简体中文";
+    public bool AutoSegmentEnglish { get; set; } = true;
+    public bool CloudTranslation { get; set; }
+    public string TranslationApiBase { get; set; } = "";
+    public string TranslationApiModel { get; set; } = "";
     public LanguageModelKind ModelProvider { get; set; } = LanguageModelKind.Ollama;
     public string OllamaEndpoint { get; set; } = "http://127.0.0.1:11434";
     public string TranslationModel { get; set; } = "hf.co/IndexTeam/Index-Translate-9B-GGUF:Q4_K_M";
@@ -79,6 +86,7 @@ public sealed class AppSettings
     public string ModelRoot { get; set; } = "";
     public string Theme { get; set; } = "Default";
     public bool ReduceMotion { get; set; }
+    public bool UseMica { get; set; }
     public string LibraryViewMode { get; set; } = "List";
     public bool EnableVad { get; set; } = true;
     public string VadModelPath { get; set; } = "";

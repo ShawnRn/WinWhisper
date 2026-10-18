@@ -1,5 +1,7 @@
 # Repository instructions
 
+Read [workflows/README.md](workflows/README.md) for the development, native UI, model/media, subtitle/AI, verification and release procedures. Keep those workflows synchronized with implemented and validated behavior.
+
 ## Product and architecture
 
 - The product is **WinWhisper**, an independent Windows 11 local media, transcription, subtitle and AI workspace. Do not copy code or resources out of the Memo installer.
@@ -44,7 +46,10 @@
 - Live recording sends finalized PCM clips to a persistent worker. Keep offsets relative to the recording, preserve audio if inference fails, and retain the single GPU gate. COM process-loopback callbacks must be publicly COM-visible and agile; completion signals used by capture disposal must run continuations asynchronously.
 - Media deletion must explicitly describe owned recording/cache removal. Preserve imported originals and shared references, reject path traversal and reparse points, and refuse deletion while recording/inference still writes that session. Track recording ownership even after associating another media file.
 - Online media, browser Cookie extraction and third-party exports must be user-triggered. Do not log or commit Cookie values, tokens, authentication databases or credentials.
-- Chinese output uses corner quotes 「」, title brackets 《》, spaces between Chinese and English/digits, and full-width Chinese commas. Preserve code, URLs, file paths, valid JSON and English punctuation. Whisper uses decoding context rather than a chat system prompt; apply typography after transcription and in language-model prompts.
+- Chinese output uses corner quotes 「」, title brackets 《》, spaces between Chinese and English/digits, and full-width Chinese commas. English contractions and possessives use ’, with ‘ ’ / “ ” for English quotations. Preserve code, URLs, file paths and valid JSON. Whisper uses decoding context rather than a chat system prompt; apply typography after transcription and in language-model prompts.
+- Never infer word alignment by dividing subtitle duration by character count. Preserve model token timestamps, validate their correspondence to the text, and use audio pauses only as boundary evidence. Punctuation restoration must reject paraphrases, dropped words, reordered words or changed numbers. Retain original cue boundaries when word timings are unavailable.
+- Subtitle translation defaults to the full transcript and always exposes the chosen scope and target language. API translation requires an explicit configured provider and confirmation showing the destination and text scope; store keys only in Windows Credential Manager. Never route local chat through a translation API.
+- Media questions must inspect every transcript chunk. Never silently select the first N cues or truncate the transcript before answering, and never infer full-media absence from a partial excerpt. Show coverage progress for long transcripts.
 
 ## Open source and release hygiene
 
