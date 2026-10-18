@@ -124,6 +124,7 @@ public sealed partial class MainWindow
     private async Task UseOllamaModelAsync(string name, bool translation)
     {
         if (aiBusy) throw new InvalidOperationException("请等待当前 AI 任务完成。");
+        if (settings.ModelProvider == LanguageModelKind.Ollama && (translation ? settings.TranslationModel : settings.SummaryModel) == name) return;
         settings.ModelProvider = LanguageModelKind.Ollama;
         if (translation) settings.TranslationModel = name; else settings.SummaryModel = name;
         SaveAppliedModel(); await Task.CompletedTask;

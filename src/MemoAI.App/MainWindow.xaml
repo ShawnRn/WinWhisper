@@ -96,7 +96,7 @@
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
       <Grid ColumnSpacing="20"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel Spacing="8"><TextBlock Text="模型商店" FontSize="30" FontWeight="SemiBold"/><TextBlock Text="为你的内容，选一位本地搭档。下载、应用，都在这里完成。" Style="{StaticResource Muted}"/></StackPanel><Button Grid.Column="1" Content="导入本地模型" VerticalAlignment="Center" Click="ImportModel_Click"/></Grid>
       <Grid Grid.Row="1" ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="180"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="StoreSearch" PlaceholderText="搜索模型、语言或用途" TextChanged="StoreFilter_Changed"/><ComboBox Grid.Column="1" x:Name="StoreCategory" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="StoreCategory_Changed"><ComboBoxItem Content="全部模型"/><ComboBoxItem Content="音视频转写"/><ComboBoxItem Content="翻译与总结"/><ComboBoxItem Content="配音与说话人"/><ComboBoxItem Content="已下载"/></ComboBox><Button Grid.Column="2" Content="刷新 Ollama" Click="RefreshOllama_Click"/></Grid>
-      <ScrollViewer Grid.Row="2"><StackPanel x:Name="StoreCards" Spacing="14" Padding="0,0,8,12"/></ScrollViewer>
+      <ScrollViewer x:Name="StoreScroll" Grid.Row="2"><StackPanel x:Name="StoreCards" Spacing="14" Padding="0,0,8,12"/></ScrollViewer>
      </Grid>
     </Grid>
    </Border>
