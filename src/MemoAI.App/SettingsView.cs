@@ -22,7 +22,7 @@ public sealed partial class MainWindow
         openStore.Click += ModelStore_Click; SettingsContent.Children.Add(openStore);
         var transcription = SettingsSection("转写与硬件加速", "自动模式优先 CUDA，失败后尝试 Vulkan 与 CPU。任务历史会记录实际后端。");
         Choice(transcription, "计算后端", new[] { "自动（CUDA → Vulkan → CPU）", "CUDA", "Vulkan", "CPU" }, (int)settings.Backend, i => settings.Backend = (ComputeBackend)i);
-        FileSetting(transcription, "Whisper 模型文件", settings.TranscriptionModelPath, p => settings.TranscriptionModelPath = p, ".bin");
+        TextSetting(transcription, "默认转写模型（在模型商店切换）", TranscriptionEngines.ModelName(settings.TranscriptionModelPath), _ => { }).IsReadOnly = true;
         TextSetting(transcription, "音频语言（auto / zh / en / ja 等）", settings.Language, v => settings.Language = v);
         var vad = new CheckBox { Content = "启用 VAD（需要先下载或选择 Silero 模型）", IsChecked = settings.EnableVad };
         transcription.Children.Add(vad); settingWriters.Add(() => settings.EnableVad = vad.IsChecked == true);
@@ -94,15 +94,23 @@ public sealed partial class MainWindow
         TextSetting(integration, "Notion 父页面 ID", settings.NotionParentPage, v => settings.NotionParentPage = v);
         var secret = new PasswordBox { Header = "Notion integration token（留空保留已有凭据）" }; integration.Children.Add(secret);
         settingWriters.Add(() => { if (secret.Password.Length > 0) SecretVault.Set("notion", secret.Password); });
-        var footer = new TextBlock { Text = "快捷键：Ctrl+O 导入 · Ctrl+F 搜索 · Ctrl+Z 撤销 · 字幕列表空格播放/暂停 · F2 重转写片段 · Delete 删除字幕\n\nMemoAI Native 0.1 · 独立自用版本 · 本地 SQLite 自动保存", Style = (Style)Application.Current.Resources["Muted"], FontSize = 12 };
+        var footer = new TextBlock { Text = "快捷键：Ctrl+O 导入 · Ctrl+F 搜索 · Ctrl+Z 撤销 · 字幕列表空格播放/暂停 · F2 重转写片段 · Delete 删除字幕", Style = (Style)Application.Current.Resources["Muted"], FontSize = 12 };
         SettingsContent.Children.Add(footer);
+        var about = SettingsSection("关于 WinWhisper", "独立开发的 Windows 本地转写与 AI 工作台。");
+        var version = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.1.0";
+        about.Children.Add(new TextBlock { Text = $"版本 {version}  ·  {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}\n开发者：Shawn Rain\n开源许可：MIT（第三方组件与模型遵循各自许可）", TextWrapping = TextWrapping.Wrap, FontSize = 13 });
+        var github = new HyperlinkButton { Content = "GitHub · ShawnRn/WinWhisper", NavigateUri = new Uri("https://github.com/ShawnRn/WinWhisper"), HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(0) };
+        about.Children.Add(github);
+        var notices = new Button { Content = "查看开源许可与 Credits", HorizontalAlignment = HorizontalAlignment.Left };
+        notices.Click += (_, _) => Process.Start(new ProcessStartInfo("explorer.exe", Path.Combine(AppContext.BaseDirectory, "CREDITS.md")) { UseShellExecute = true });
+        about.Children.Add(notices);
     }
     private StackPanel SettingsSection(string title, string description)
     {
         var panel = new StackPanel { Spacing = 12 };
         panel.Children.Add(new TextBlock { Text = title, Style = (Style)Application.Current.Resources["SectionTitle"] });
         panel.Children.Add(new TextBlock { Text = description, Style = (Style)Application.Current.Resources["Muted"], FontSize = 12 });
-        SettingsContent.Children.Add(new Border { Style = (Style)Application.Current.Resources["Card"], Padding = new Thickness(22), Child = panel }); return panel;
+        SettingsContent.Children.Add(new ContinuousSurface { Style = (Style)Application.Current.Resources["Card"], Padding = new Thickness(22), Child = panel }); return panel;
     }
     private TextBox TextSetting(StackPanel parent, string label, string value, Action<string> setter, bool multiline = false)
     {
@@ -152,7 +160,7 @@ public sealed partial class MainWindow
     }
     private async Task<string?> DownloadReleaseAssetAsync(string repository, string tag, string assetName, string name, bool confirm = true, CancellationToken ct = default)
     {
-        using var http = new System.Net.Http.HttpClient { Timeout = Timeout.InfiniteTimeSpan }; http.DefaultRequestHeaders.UserAgent.ParseAdd("MemoAI-Native/0.1");
+        using var http = new System.Net.Http.HttpClient { Timeout = Timeout.InfiniteTimeSpan }; http.DefaultRequestHeaders.UserAgent.ParseAdd("WinWhisper/0.1");
         var source = $"https://github.com/{repository}/releases/download/{tag}/{assetName}";
         using var metadata = await http.SendAsync(new(System.Net.Http.HttpMethod.Head, source), ct); metadata.EnsureSuccessStatusCode();
         var size = metadata.Content.Headers.ContentLength;

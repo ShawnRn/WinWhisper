@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace MemoAI.Core;
 
-public sealed record ModelDownload(string Id, string Name, string Repository, string FileName, string Purpose, long Size = 0, string Sha256 = "");
+public sealed record ModelDownload(string Id, string Name, string Repository, string FileName, string Purpose, long Size = 0, string Sha256 = "", string? Url = null);
 public sealed record ModelMetadata(long Size, string Sha256);
 
 public static class ModelCatalog
@@ -55,9 +55,11 @@ public sealed class ModelDownloader : IDisposable
         }
         if (offset < metadata.Size)
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"https://huggingface.co/{model.Repository}/resolve/main/{Uri.EscapeDataString(model.FileName)}");
+            using var request = new HttpRequestMessage(HttpMethod.Get, model.Url ?? $"https://huggingface.co/{model.Repository}/resolve/main/{Uri.EscapeDataString(model.FileName)}");
             if (offset > 0) request.Headers.Range = new(offset, null);
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct); response.EnsureSuccessStatusCode();
+            if (response.StatusCode == System.Net.HttpStatusCode.PartialContent && response.Content.Headers.ContentRange?.From != offset)
+                throw new InvalidDataException("下载源返回了错误的续传位置，请重试。");
             if (response.StatusCode != System.Net.HttpStatusCode.PartialContent) offset = 0;
             await using var source = await response.Content.ReadAsStreamAsync(ct);
             await using var target = new FileStream(partial, offset > 0 ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None, 131072, true);

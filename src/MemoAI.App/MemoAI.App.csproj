@@ -12,14 +12,31 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <AssemblyName>MemoAI.Native</AssemblyName>
+    <AssemblyName>WinWhisper</AssemblyName>
+    <Product>WinWhisper</Product>
+    <Title>WinWhisper</Title>
+    <Authors>Shawn Rain</Authors>
+    <Version>0.1.0</Version>
+    <ApplicationIcon>Assets/Brand/WinWhisper.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <Page Remove="NativeContinuousStyles.xaml" />
+    <Page Include="NativeContinuousStyles.xaml" />
     <Content Include="Assets/Fonts/*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets/Licenses/*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets/Brand/*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../LICENSE" Link="LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../CREDITS.md" Link="CREDITS.md" CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
     <PackageReference Include="Markdig" Version="1.4.1" />
+    <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
     <ProjectReference Include="../MemoAI.Core/MemoAI.Core.csproj" />
   </ItemGroup>
+  <Target Name="GenerateNativeSurfaces" BeforeTargets="PrepareForBuild"
+          Inputs="$(MSBuildProjectDirectory)/../../scripts/update-native-surfaces.ps1;$(NuGetPackageRoot)microsoft.windowsappsdk.winui/2.3.9/lib/native/Microsoft.UI/Themes/generic.xaml"
+          Outputs="$(MSBuildProjectDirectory)/NativeContinuousStyles.xaml;$(MSBuildProjectDirectory)/Assets/Licenses/WindowsAppSDK.txt">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)/../../scripts/update-native-surfaces.ps1&quot; -ResourceSource &quot;$(NuGetPackageRoot)microsoft.windowsappsdk.winui/2.3.9/lib/native/Microsoft.UI/Themes/generic.xaml&quot;" />
+  </Target>
 </Project>

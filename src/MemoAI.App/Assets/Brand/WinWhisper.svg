@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">WinWhisper</title>
+  <desc id="desc">A layered blue Windows-native icon, featuring an audio waveform converting to lines of transcribed text inside a speech bubble.</desc>
+  <defs>
+    <linearGradient id="backPanel" x1="0" y1="0" x2="0.92" y2="1">
+      <stop offset="0" stop-color="#168CFF"/>
+      <stop offset="0.48" stop-color="#0560EA"/>
+      <stop offset="1" stop-color="#0038C6"/>
+    </linearGradient>
+    <linearGradient id="backShade" x1="0" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#0051D9"/>
+      <stop offset="1" stop-color="#102C9F"/>
+    </linearGradient>
+    <linearGradient id="topSheet" x1="0.05" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2EE6F2"/>
+      <stop offset="0.48" stop-color="#42B8FF"/>
+      <stop offset="1" stop-color="#1675F4"/>
+    </linearGradient>
+    <linearGradient id="topFold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#216EF2"/>
+      <stop offset="0.65" stop-color="#0C4FD8"/>
+      <stop offset="1" stop-color="#0642BB"/>
+    </linearGradient>
+    <linearGradient id="bubbleRim" x1="0.05" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#EAFBFF"/>
+      <stop offset="0.56" stop-color="#43D7FA"/>
+      <stop offset="1" stop-color="#0078F4"/>
+    </linearGradient>
+    <linearGradient id="bubbleFace" x1="0.05" y1="0" x2="0.88" y2="1">
+      <stop offset="0" stop-color="#F8FEFF"/>
+      <stop offset="0.48" stop-color="#E4F7FF"/>
+      <stop offset="0.82" stop-color="#C6EAFE"/>
+      <stop offset="1" stop-color="#9ED5FB"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="0" y1="0" x2="0.15" y2="1">
+      <stop offset="0" stop-color="#03D4EA"/>
+      <stop offset="0.52" stop-color="#009BF8"/>
+      <stop offset="1" stop-color="#1636D7"/>
+    </linearGradient>
+    <linearGradient id="textBlue" x1="0" y1="0" x2="1" y2="0.4">
+      <stop offset="0" stop-color="#068CF9"/>
+      <stop offset="1" stop-color="#0752D7"/>
+    </linearGradient>
+    <linearGradient id="textCyan" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0CCFF3"/>
+      <stop offset="1" stop-color="#0C94F5"/>
+    </linearGradient>
+    <linearGradient id="arrow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#50DFF5"/>
+      <stop offset="1" stop-color="#159EED"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rear sapphire tile, gently cropped by a diagonal fold -->
+  <path d="M26 91 Q26 80 37 74 L157 48 Q173 39 181 51 L196 63 L196 203 C196 223 196 223 176 223 H46 C26 223 26 223 26 203 Z" fill="url(#backPanel)"/>
+  <path d="M26 166 Q31 150 50 136 L178 48 Q191 40 196 48 V202 C196 223 196 223 176 223 H46 C26 223 26 223 26 203 Z" fill="url(#backShade)" opacity=".55"/>
+  <!-- An upper cyan sheet folded over an indigo sheet -->
+  <path d="M71 55 C71 24 71 24 102 24 H188 C216 24 216 24 216 52 V113 H71 Z" fill="url(#topSheet)"/>
+  <path d="M71 111 L202 32 Q216 26 216 52 V113 H71 Z" fill="url(#topFold)"/>
+  <path d="M71 99 V55 C71 24 71 24 102 24 H188 Q199 24 207 31 Q199 28 187 36 L71 111 Z" fill="url(#topSheet)"/>
+
+  <!-- Sapphire drop edge: separate vector path, no raster shadow -->
+  <path d="M88 92 H209 Q239 92 239 123 V173 Q239 197 220 205 Q212 210 213 227 Q213 235 205 228 L180 207 H88 Q54 207 54 175 V127 Q54 92 88 92 Z" fill="#0075EF" opacity=".86"/>
+  <!-- Foreground bubble face -->
+  <path d="M88 88 H209 C235 88 235 88 235 119 V171 Q235 190 219 199 Q208 205 209 220 Q210 228 203 222 L178 201 H88 Q58 201 58 173 V119 C58 88 58 88 88 88 Z" fill="url(#bubbleRim)"/>
+  <path d="M88 89.5 H209 Q233 89.5 233 119 V168 Q233 186 216 196 Q203 203 206 217 L178 198 H88 Q61 198 61 172 V119 Q61 89.5 88 89.5 Z" fill="url(#bubbleFace)"/>
+  <!-- Lower-right translucent folded highlight -->
+  <path d="M133 198 H178 L206 217 Q203 203 216 196 Q233 186 233 168 V160 Q216 179 184 193 Q166 199 133 198 Z" fill="#A9DFFE" opacity=".45"/>
+
+  <!-- Editable audio waveform: 5 simple rounded vector bars -->
+  <g fill="url(#wave)">
+    <rect x="72" y="138" width="10" height="23" rx="5"/>
+    <rect x="86" y="127" width="10" height="45" rx="5"/>
+    <rect x="100" y="110" width="11" height="77" rx="5.5"/>
+    <rect x="115" y="126" width="10" height="47" rx="5"/>
+    <rect x="129" y="138" width="10" height="23" rx="5"/>
+  </g>
+
+  <!-- Voice → text: arrow, plus three transcript lines -->
+  <path d="M145 147 H155 L152 144 Q150 141 153 138 Q156 135 159 138 L170 149 Q172 151 170 154 L159 165 Q156 168 153 165 Q150 162 152 159 L155 156 H145 Q141 156 141 152 Q141 147 145 147 Z" fill="url(#arrow)"/>
+  <g>
+    <rect x="174" y="124" width="49" height="9" rx="4.5" fill="url(#textBlue)"/>
+    <rect x="174" y="146" width="49" height="9" rx="4.5" fill="url(#textBlue)"/>
+    <rect x="174" y="168" width="39" height="9" rx="4.5" fill="url(#textCyan)"/>
+  </g>
+</svg>

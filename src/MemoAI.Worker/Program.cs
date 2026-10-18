@@ -11,7 +11,8 @@ try
     Task Emit(JobEvent e) { Console.WriteLine(Json.Write(e)); return Task.CompletedTask; }
     switch (request.Operation)
     {
-        case "transcribe": await new WhisperEngine(paths).TranscribeAsync(request, Emit, CancellationToken.None); break;
+        case "transcribe": await TranscriptionEngines.Create(paths, request.Settings.TranscriptionModelPath).TranscribeAsync(request, Emit, CancellationToken.None); break;
+        case "transcribe-live": await new LiveTranscription(paths).RunAsync(request, Console.In, Emit, CancellationToken.None); break;
         case "tts": await new SherpaSpeech(paths).SynthesizeAsync(request, Emit, CancellationToken.None); break;
         case "diarize": await new SherpaSpeech(paths).DiarizeAsync(request, Emit, CancellationToken.None); break;
         default: throw new NotSupportedException($"未知任务：{request.Operation}");

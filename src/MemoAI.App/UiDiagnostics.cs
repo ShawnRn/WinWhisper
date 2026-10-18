@@ -22,6 +22,34 @@ public sealed partial class MainWindow
                 navigationPassed &= item.IsSelected && page.Visibility == Visibility.Visible;
             }
             result["navigationTracksAllSixPages"] = navigationPassed;
+            StoreCategory.SelectedIndex = 1; StoreSearch.Text = "parakeet"; BuildModelStore();
+            result["parakeetModelsVisibleInStore"] = modelCards.Count == 3;
+            StoreSearch.Text = "阿里"; BuildModelStore();
+            result["alibabaModelsVisibleInStore"] = modelCards.Count == 7;
+            StoreSearch.Text = ""; StoreCategory.SelectedIndex = 0; BuildModelStore();
+            result["settingsContainAboutMetadata"] = Descendants(SettingsContent).OfType<TextBlock>().Any(t => t.Text.Contains("开发者：Shawn Rain") && t.Text.Contains("MIT"));
+            ShowPage(RecordView); await Task.Delay(80);
+            var recordBounds = RecordingContent.TransformToVisual(RecordView).TransformBounds(new Windows.Foundation.Rect(0, 0, RecordingContent.ActualWidth, RecordingContent.ActualHeight));
+            result["recordingColumnCentered"] = Math.Abs(recordBounds.X + recordBounds.Width / 2 - RecordView.ActualWidth / 2) < 3;
+            result["recordingHasApplicationAndLiveOptions"] = RecordingMode.Items.Count == 4 && RecordingLive is not null && RecordingModel is not null;
+            var navigationPresenter = Descendants(NavRecord).OfType<Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter>().FirstOrDefault();
+            var hoverSurface = navigationPresenter is null ? null : Descendants(navigationPresenter).OfType<ContinuousSurface>().FirstOrDefault(s => s.Name == "G2_LayoutRoot");
+            var restoredHover = hoverSurface is not null;
+            if (hoverSurface is not null)
+            {
+                VisualStateManager.GoToState(navigationPresenter!, "Normal", false);
+                var originalBackground = hoverSurface.Background; var originalCorner = hoverSurface.CornerRadius; var originalPaint = hoverSurface.PaintIdentity;
+                for (var i = 0; i < 40; i++)
+                {
+                    VisualStateManager.GoToState(navigationPresenter!, "PointerOver", false);
+                    restoredHover &= !ReferenceEquals(hoverSurface.Background, originalBackground) && hoverSurface.CornerRadius == originalCorner && hoverSurface.HasGeometry;
+                    VisualStateManager.GoToState(navigationPresenter!, "Normal", false);
+                    restoredHover &= ReferenceEquals(hoverSurface.Background, originalBackground) && ReferenceEquals(hoverSurface.PaintIdentity, originalPaint) && hoverSurface.HasGeometry;
+                }
+            }
+            result["hoverRestoresImmediatelyWithStableGeometryAndBrush"] = restoredHover;
+            var navBlankPoint = NavRecord.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(Math.Max(12, NavRecord.ActualWidth - 24), NavRecord.ActualHeight / 2));
+            result["navigationBlankAreaIsHitTestable"] = Microsoft.UI.Xaml.Media.VisualTreeHelper.FindElementsInHostCoordinates(navBlankPoint, Root).Contains(NavRecord);
             result["navigationDoesNotStartRecordingOrDownload"] = recorder is null && linkCancellation is null;
             result["bottomStatusBarRemoved"] = Root.RowDefinitions.Count == 2;
             var wavePath = Path.Combine(paths.DataRoot, "playback-fixture.wav");
@@ -94,6 +122,23 @@ public sealed partial class MainWindow
             AppWindow.Resize(new Windows.Graphics.SizeInt32(1500, 980)); AiToggle.IsChecked = true; AiToggle_Click(this, new()); await Task.Delay(180);
             sessions.Add(fixture); ShowPage(LibraryView); RefreshLibrary(); LibraryList.SelectedItems.Add(fixture);
             LibraryMode_Click(LibraryGridMode, new());
+            LibraryGrid.UpdateLayout(); await Task.Delay(100);
+            var gridItem = LibraryGrid.ContainerFromItem(fixture) as GridViewItem;
+            IEnumerable<DependencyObject> Descendants(DependencyObject node)
+            {
+                for (var i = 0; i < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(node); i++)
+                {
+                    var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(node, i); yield return child;
+                    foreach (var descendant in Descendants(child)) yield return descendant;
+                }
+            }
+            var gridTree = gridItem is null ? [] : Descendants(gridItem).ToArray();
+            var gridSurfaces = gridTree.OfType<ContinuousSurface>().Where(b => b.Name == "SingleSurface").ToArray();
+            result["gridSurfaceDiagnostics"] = $"container={gridItem?.GetType().Name}; surfaces={gridSurfaces.Length}; state={string.Join(',', gridSurfaces.Select(s => $"{s.IsLoaded}/{s.ActualWidth}x{s.ActualHeight}/{s.Background?.GetType().Name}/{s.HasGeometry}"))}; tree={string.Join(',', gridTree.Take(12).Select(n => n.GetType().Name))}";
+            // A virtualized container can already be measured while its surface is unloaded.
+            // Check selection layering here; live surface painting is checked below on the workspace.
+            result["gridUsesSingleStateSurface"] = gridSurfaces.Length == 1 && !gridTree.OfType<Microsoft.UI.Xaml.Controls.Primitives.GridViewItemPresenter>().Any();
+            result["recentHostDoesNotDrawOuterSelectionSurface"] = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(RecentHost, 0) is ContentPresenter;
             result["libraryGridPersistsModeAndSelection"] = LibraryGrid.Visibility == Visibility.Visible && LibraryGrid.SelectedItems.Contains(fixture) && store.LoadSettings().LibraryViewMode == "Grid";
             LibrarySearch.Text = fixture.Title;
             result["libraryViewsShareFilters"] = ReferenceEquals(LibraryGrid.ItemsSource, LibraryList.ItemsSource) && LibraryGrid.Items.Count == 1;
@@ -101,7 +146,46 @@ public sealed partial class MainWindow
             result["libraryListModeRestores"] = LibraryList.Visibility == Visibility.Visible && LibraryGridMode.IsChecked == false && store.LoadSettings().LibraryViewMode == "List";
             Back_Click(this, new()); await Task.Delay(100);
             result["backReturnsToMediaWithoutClearingChat"] = WorkspaceView.Visibility == Visibility.Visible && current == fixture && ReferenceEquals(ChatMessages.ItemsSource, fixture.Chat);
+            Forward_Click(this, new()); await Task.Delay(60);
+            result["forwardRestoresLibrary"] = LibraryView.Visibility == Visibility.Visible && NavigationBack.IsEnabled;
+            Back_Click(this, new()); await Task.Delay(60);
+            var animationCount = navigationAnimationCount;
+            ShowPage(WorkspaceView);
+            result["samePageDoesNotReplayAnimation"] = navigationAnimationCount == animationCount;
+            var reduceMotion = settings.ReduceMotion; settings.ReduceMotion = true;
+            ShowPage(QueueView); ShowPage(WorkspaceView);
+            result["reduceMotionSkipsPageAnimations"] = navigationAnimationCount == animationCount;
+            settings.ReduceMotion = false;
+            for (var i = 0; i < 12; i++) { ShowPage(QueueView); ShowPage(WorkspaceView); }
+            await Task.Delay(260);
+            var pageVisual = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(WorkspaceView);
+            pageVisual.Properties.TryGetVector3("Translation", out var finalTranslation);
+            result["rapidNavigationSettlesWithoutOffsetOrFading"] = WorkspaceView.Visibility == Visibility.Visible && QueueView.Visibility == Visibility.Collapsed && pageVisual.Opacity == 1 && finalTranslation.Length() < .01;
+            result["pageMotionRespectsSystemPreference"] = motionSettings.AnimationsEnabled ? navigationAnimationCount >= animationCount + 24 : navigationAnimationCount == animationCount;
+            settings.ReduceMotion = reduceMotion;
             result["bundledTypographyConfigured"] = SessionTitle.FontFamily.Source.Contains("NotoSansSC") && File.Exists(Path.Combine(AppContext.BaseDirectory, "Assets", "Fonts", "NotoSansSC.ttf"));
+
+            result["continuousCornersAppliedWithoutErrors"] = TranscriptionProgressCard.HasGeometry && ShellSurface.HasGeometry;
+            var controls = ContinuousCorners.CornerControls(100, 12);
+            var startTangent = 3 * (controls[1] - controls[0]); var endTangent = 3 * (controls[3] - controls[2]);
+            var startSecond = 6 * (controls[2] - 2 * controls[1] + controls[0]); var endSecond = 6 * (controls[3] - 2 * controls[2] + controls[1]);
+            float Cross(System.Numerics.Vector2 a, System.Numerics.Vector2 b) => a.X * b.Y - a.Y * b.X;
+            result["g2CornersHaveEdgeTangentsAndZeroEndpointCurvature"] = startTangent.X > 0 && startTangent.Y == 0 && endTangent.Y > 0 && endTangent.X == 0 && Cross(startTangent, startSecond) == 0 && Cross(endTangent, endSecond) == 0;
+            result["continuousCornersKeepExpectedDiagonalRoundness"] = Math.Abs(ContinuousCorners.CornerExtent(12, 100) / 8 - 12 * (1 - Math.Sqrt(.5))) < .001;
+            var originalTheme = Root.RequestedTheme;
+            Root.RequestedTheme = ElementTheme.Light; await Task.Delay(100);
+            var lightBrush = TranscriptionProgressCard.Background as Microsoft.UI.Xaml.Media.SolidColorBrush;
+            var lightColor = lightBrush?.Color;
+            var lightShell = (ShellSurface.Background as Microsoft.UI.Xaml.Media.SolidColorBrush)?.Color;
+            Root.RequestedTheme = ElementTheme.Dark; await Task.Delay(100);
+            var darkBrush = TranscriptionProgressCard.Background as Microsoft.UI.Xaml.Media.SolidColorBrush;
+            result["continuousSurfaceTracksTheme"] = lightColor.HasValue && darkBrush is not null && lightColor.Value != darkBrush.Color;
+            var darkShell = (ShellSurface.Background as Microsoft.UI.Xaml.Media.SolidColorBrush)?.Color;
+            result["shellSurfaceTracksTheme"] = lightShell.HasValue && darkShell.HasValue && lightShell != darkShell;
+            Root.RequestedTheme = originalTheme; await Task.Delay(100);
+            var idleGeometry = ShellSurface.GeometryUpdates; var idleConnections = ShellSurface.Connections; var idlePaint = ShellSurface.PaintIdentity;
+            await Task.Delay(800); // Includes several playback timer ticks with no user action.
+            result["idleBackgroundDoesNotRebuildGeometryOrReconnect"] = ShellSurface.GeometryUpdates == idleGeometry && ShellSurface.Connections == idleConnections && ReferenceEquals(idlePaint, ShellSurface.PaintIdentity);
             BuildModelStore(); ShowPage(ModelStoreView);
             await Task.Delay(100); // Let the real WinUI layout establish the scroll extent.
             StoreScroll.ChangeView(null, StoreScroll.ScrollableHeight, null, true);
@@ -130,6 +214,35 @@ public sealed partial class MainWindow
             result["translationSaved"] = store.LoadSettings().TranslationModel == "test-translation";
             result["summarySaved"] = store.LoadSettings().SummaryModel == "test-summary-b";
             result["savedModel"] = store.LoadSettings().SummaryModel;
+            if (Environment.GetCommandLineArgs().Contains("--ui-test-recording"))
+            {
+                var tone = Path.Combine(paths.DataRoot, "own-process-tone.wav");
+                using (var wave = new BinaryWriter(File.Create(tone)))
+                {
+                    wave.Write(System.Text.Encoding.ASCII.GetBytes("RIFF")); wave.Write(16000 * 2 * 5 + 36); wave.Write(System.Text.Encoding.ASCII.GetBytes("WAVEfmt "));
+                    wave.Write(16); wave.Write((short)1); wave.Write((short)1); wave.Write(16000); wave.Write(32000); wave.Write((short)2); wave.Write((short)16);
+                    wave.Write(System.Text.Encoding.ASCII.GetBytes("data")); wave.Write(16000 * 2 * 5);
+                    for (var n = 0; n < 16000 * 5; n++) wave.Write((short)(Math.Sin(n * 2 * Math.PI * 440 / 16000) * 12000));
+                }
+                using var capture = new AudioRecorder(paths.DataRoot, 3, paths, (uint)Environment.ProcessId);
+                await capture.StartAsync();
+                fixture.MediaPath = tone; fixture.PlaybackPath = ""; await OpenSessionAsync(fixture);
+                for (var i = 0; i < 100 && ownedPlayer.PlaybackSession.NaturalDuration.TotalSeconds < 4; i++) await Task.Delay(20);
+                ownedPlayer.Volume = .03; ownedPlayer.Play(); await Task.Delay(1800); ownedPlayer.Pause();
+                var clip = Path.Combine(paths.DataRoot, "own-process-clip.wav");
+                await Task.Run(() => capture.SnapshotAsync(clip, 0, 1.5, CancellationToken.None));
+                var samples = SherpaTranscription.ReadPcm16(clip);
+                result["singleApplicationLoopbackCapturesOwnAudio"] = samples.Length == 24000 && samples.Any(s => Math.Abs(s) > .0001f);
+                var recording = await capture.StopAsync();
+                result["recordingSnapshotAndFinalWaveReopen"] = await new MediaTools(paths).ProbeAsync(recording, CancellationToken.None) >= 1.5;
+            }
+            var playbackVideo = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--ui-test-video="))?[16..];
+            if (playbackVideo is not null)
+            {
+                fixture.MediaPath = playbackVideo; fixture.PlaybackPath = ""; await OpenSessionAsync(fixture);
+                for (var i = 0; i < 200 && Player.MediaPlayer.PlaybackSession.NaturalVideoHeight == 0; i++) await Task.Delay(25);
+                result["realVideoLoadedBeforeShutdown"] = Player.MediaPlayer.PlaybackSession.NaturalVideoHeight > 0;
+            }
             var passed = result.Where(p => p.Value is bool).All(p => (bool)p.Value);
             result["passed"] = passed;
             if (!passed) throw new InvalidOperationException("UI identity regression");
@@ -137,6 +250,6 @@ public sealed partial class MainWindow
         }
         catch (Exception ex) { result["passed"] = false; result["error"] = ex.ToString(); }
         await File.WriteAllTextAsync(Path.Combine(paths.DataRoot, "ui-test-results.json"), Json.Write(result));
-        if (Environment.GetCommandLineArgs().Contains("--exit-after-test")) Close();
+        if (Environment.GetCommandLineArgs().Contains("--exit-after-test")) await ShutdownAndCloseAsync();
     }
 }

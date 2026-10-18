@@ -170,6 +170,112 @@ await Test("Corrupt model is rejected and never applied", async () =>
     Check(!File.Exists(Path.Combine(directory, "fixture.bin")), "错误模型被移动到正式路径");
 });
 
+await Test("ASR catalog has pinned assets, languages and engine dispatch", () => Sync(() =>
+{
+    Check(AsrModels.All.Length >= 10 && AsrModels.All.Select(m => m.Id).Distinct().Count() == AsrModels.All.Length, "模型目录缺失或 ID 重复");
+    foreach (var m in AsrModels.All)
+    {
+        Check(m.Bytes > 0 && m.Sha256.Length == 64 && m.LanguageCodes.Length > 0, "模型未固定大小、校验值或语言");
+        Check(StoreModels.All.Any(s => s.Asr == m), "ASR 模型未在商店显示");
+    }
+    Check(!AsrModels.All.First(m => m.Id == "parakeet-v3").LanguageCodes.Contains("zh"), "Parakeet 错误宣称支持中文");
+    var paths = new AppPaths(Path.Combine(run, "asr-dispatch"));
+    Check(TranscriptionEngines.Create(paths, "model.asr.json") is SherpaTranscription && TranscriptionEngines.Create(paths, "model.bin") is WhisperEngine, "转写引擎未按模型切换");
+    Check(!AsrModels.IsInstalled(AsrModels.All[0], paths.ModelRoot), "不存在的模型被标记为已安装");
+    try { AsrModels.SafePath(paths.ModelRoot, "../escape.onnx"); throw new Exception("包路径穿越被接受"); } catch (InvalidDataException) { }
+    Check(SherpaTranscription.AudioRanges(new float[16000], true).Count == 0, "静音被发送给识别器");
+    Check(SherpaTranscription.AudioRanges(new float[16000], false).Single() == (0, 16000), "关闭静音过滤后音频被截断");
+}));
+var asrTest = args.FirstOrDefault(a => a.StartsWith("--asr="))?[6..];
+await Test("ASR installation stays atomic across replacement and rejects missing/traversing files", () => Sync(() =>
+{
+    var model = AsrModels.All.First(m => m.Id == "sensevoice-int8"); var modelRoot = Path.Combine(run, "asr-replace");
+    var manifest = model.ManifestPath(modelRoot); var installRoot = Path.GetDirectoryName(manifest)!;
+    foreach (var version in new[] { "content-old", "content-current" })
+    {
+        var directory = Path.Combine(installRoot, version); Directory.CreateDirectory(directory);
+        File.WriteAllBytes(Path.Combine(directory, "model.int8.onnx"), [1, 2, 3, 4]); File.WriteAllText(Path.Combine(directory, "tokens.txt"), "fixture");
+    }
+    var installed = new AsrInstallation(1, model.Id, model.Sha256,
+        [new("content-current/model.int8.onnx", 4), new("content-current/tokens.txt", new FileInfo(Path.Combine(installRoot, "content-current", "tokens.txt")).Length)]);
+    File.WriteAllText(manifest, Json.Write(installed));
+    Check(AsrModels.IsInstalled(model, modelRoot) && AsrModels.ResolveFiles(manifest)["model"].Contains("content-current"), "旧模型目录干扰了新安装");
+    File.WriteAllBytes(Path.Combine(installRoot, "content-current", "model.int8.onnx"), [1]);
+    Check(!AsrModels.IsInstalled(model, modelRoot), "被截断的模型仍显示已安装");
+    File.WriteAllText(manifest, Json.Write(installed with { Files = [new("../escape", 4)] }));
+    Check(!AsrModels.IsInstalled(model, modelRoot), "安装记录中的越界路径被接受");
+}));
+if (asrTest is not null)
+{
+    var paths = new AppPaths(Path.Combine(run, "asr-data"), Path.Combine(root, "engines"));
+    var modelRoot = Path.Combine(root, "artifacts", "test-assets", "asr-models");
+    foreach (var id in asrTest.Split(','))
+    {
+        var model = AsrModels.All.First(m => m.Id == id);
+        await Test("Real ASR install/configure/worker/recovery " + id, async () =>
+        {
+            if (!AsrModels.IsInstalled(model, modelRoot))
+            {
+                Console.WriteLine($"Downloading {model.Name} ({model.Bytes / 1048576} MB)");
+                await AsrModels.InstallAsync(model, modelRoot, null, CancellationToken.None);
+            }
+            var options = new AppSettings { EngineRoot = paths.EngineRoot, Language = model.LanguageCodes.Contains("en") ? "en" : "zh", EnableVad = true };
+            StoreModels.Apply(StoreModels.All.First(s => s.Id == id), options, modelRoot);
+            Check(StoreModels.IsApplied(StoreModels.All.First(s => s.Id == id), options, modelRoot), "模型无法应用");
+            var audio = Path.Combine(root, "artifacts", "test-assets", "jfk.wav");
+            if (model.LanguageCodes.SequenceEqual(new[] { "zh" }))
+                audio = Directory.GetFiles(Path.GetDirectoryName(model.ManifestPath(modelRoot))!, "*.wav", SearchOption.AllDirectories).First();
+            var request = new JobRequest(Guid.NewGuid().ToString("N"), session.Id, "transcribe", audio, Path.Combine(run, id), options);
+            JobEvent? final = null; var warnings = new List<string>();
+            await new WorkerClient(paths).RunAsync(request, e => { if (e.Type == "completed") final = e; if (e.Type == "warning") warnings.Add(e.Message); return Task.CompletedTask; }, CancellationToken.None);
+            Check(final?.Backend == "Cpu" && final.Segments?.Length > 0 && final.Segments.All(s => s.Start >= 0 && s.End > s.Start), "没有有效的 CPU 转写结果");
+            if (options.Language == "en") Check(string.Join(" ", final!.Segments!.Select(s => s.Text)).Contains("country", StringComparison.OrdinalIgnoreCase), "真实音频未被正确识别");
+            await File.WriteAllTextAsync(Path.Combine(run, id + "-result.json"), Json.Write(new { final, warnings }));
+            var expected = string.Join(" ", final!.Segments!.Select(s => s.Text));
+            await new WorkerClient(paths).RunAsync(request, e => { if (e.Type == "completed") final = e; return Task.CompletedTask; }, CancellationToken.None);
+            Check(string.Join(" ", final!.Segments!.Select(s => s.Text)) == expected, "检查点恢复内容发生变化");
+            var unsupported = Json.Read<AppSettings>(Json.Write(options)); unsupported.Backend = ComputeBackend.Cuda;
+            try { SherpaTranscription.Configuration(unsupported.TranscriptionModelPath, unsupported); throw new Exception("错误报告 CUDA 支持"); } catch (NotSupportedException) { }
+        });
+    }
+}
+
+if (args.Contains("--live"))
+{
+    var paths = new AppPaths(Path.Combine(run, "live-data"), Path.Combine(root, "engines"));
+    var model = AsrModels.All.First(m => m.Id == "sensevoice-int8");
+    var options = new AppSettings { EngineRoot = paths.EngineRoot, TranscriptionModelPath = model.ManifestPath(Path.Combine(root, "artifacts", "test-assets", "asr-models")), Language = "en" };
+    await Test("Live worker returns subtitles before recording ends, preserves offsets and completes", async () =>
+    {
+        var channel = System.Threading.Channels.Channel.CreateUnbounded<LiveAudioClip>();
+        var source = Path.Combine(root, "artifacts", "test-assets", "jfk.wav");
+        var first = Path.Combine(run, "live-first.wav"); var second = Path.Combine(run, "live-second.wav");
+        await new MediaTools(paths).ExtractAudioAsync(source, first, 0, 4, CancellationToken.None);
+        await new MediaTools(paths).ExtractAudioAsync(source, second, 4, 4, CancellationToken.None);
+        var receivedFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); var segments = new List<SubtitleSegment>(); var completed = false;
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        var task = new WorkerClient(paths).RunLiveAsync(new(Guid.NewGuid().ToString("N"), session.Id, "transcribe-live", "", run, options), channel.Reader, e =>
+        {
+            if (e.Type == "segments" && e.Segments is { } cues) { segments.AddRange(cues); receivedFirst.TrySetResult(); }
+            if (e.Type == "completed") completed = true;
+            return Task.CompletedTask;
+        }, stop.Token);
+        await channel.Writer.WriteAsync(new(first, 0));
+        await receivedFirst.Task.WaitAsync(TimeSpan.FromSeconds(45));
+        Check(!task.IsCompleted, "实时字幕必须在音频流结束前返回");
+        await channel.Writer.WriteAsync(new(second, 4)); channel.Writer.TryComplete(); await task;
+        Check(completed && segments.Any(s => s.Start < 4) && segments.Any(s => s.Start >= 4) && segments.All(s => s.End <= 8.01), "实时字幕片段时间或结束状态错误");
+        await File.WriteAllTextAsync(Path.Combine(run, "live-result.json"), Json.Write(segments));
+    });
+    await Test("Live worker cancellation exits while waiting for more audio", async () =>
+    {
+        var channel = System.Threading.Channels.Channel.CreateUnbounded<LiveAudioClip>(); using var stop = new CancellationTokenSource();
+        var task = new WorkerClient(paths).RunLiveAsync(new(Guid.NewGuid().ToString("N"), session.Id, "transcribe-live", "", run, options), channel.Reader, _ => Task.CompletedTask, stop.Token);
+        await Task.Delay(300); stop.Cancel();
+        try { await task.WaitAsync(TimeSpan.FromSeconds(10)); throw new Exception("实时工作进程未取消"); } catch (OperationCanceledException) { }
+    });
+}
+
 if (args.Contains("--integration"))
 {
     var paths = new AppPaths(Path.Combine(run, "integration-data"), Path.Combine(root, "engines"));

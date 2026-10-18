@@ -11,8 +11,11 @@ public sealed partial class MainWindow
     {
         if (settings is null || sender is not FrameworkElement button) return;
         var selectedMedia = (LibraryGrid.Visibility == Visibility.Visible ? LibraryGrid.SelectedItems : LibraryList.SelectedItems).OfType<MediaSession>().ToArray();
+        var previous = settings.LibraryViewMode;
         settings.LibraryViewMode = button.Tag as string == "Grid" ? "Grid" : "List";
         ApplyLibraryView();
+        var view = settings.LibraryViewMode == "Grid" ? (UIElement)LibraryGrid : LibraryList;
+        if (previous != settings.LibraryViewMode) { ResetPageMotion(view); AnimatePage(view, true); }
         var selection = LibraryGrid.Visibility == Visibility.Visible ? LibraryGrid.SelectedItems : LibraryList.SelectedItems;
         selection.Clear(); foreach (var media in selectedMedia) selection.Add(media);
         store.SaveSettings(settings);

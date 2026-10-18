@@ -60,7 +60,7 @@ public partial class ChatTurn : ObservableObject
     public string Role { get; set; } = "assistant";
     [ObservableProperty] private string content = "";
     [ObservableProperty] private string status = "";
-    public string Label => Role == "user" ? "你" : "MemoAI";
+    public string Label => Role == "user" ? "你" : "WinWhisper";
 }
 
 public sealed class AppSettings

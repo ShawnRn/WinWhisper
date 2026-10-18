@@ -42,7 +42,7 @@ public sealed class NativeMarkdownView : ContentControl
             var copy = new Button { Content = "复制代码", FontSize = 12, Padding = new Thickness(6, 2, 6, 2), HorizontalAlignment = HorizontalAlignment.Right };
             copy.Click += (_, _) => { var data = new DataPackage(); data.SetText(content); Clipboard.SetContent(data); copy.Content = "已复制"; };
             stack.Children.Add(copy); stack.Children.Add(new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = new TextBlock { Text = content, FontFamily = new("Consolas"), FontSize = 13, IsTextSelectionEnabled = true, TextWrapping = TextWrapping.NoWrap } });
-            return new Border { Style = (Style)Application.Current.Resources["Card"], Padding = new Thickness(10), Child = stack };
+            return new ContinuousSurface { Style = (Style)Application.Current.Resources["Card"], Padding = new Thickness(10), Child = stack };
         }
         if (block is Table table)
         {
@@ -54,7 +54,7 @@ public sealed class NativeMarkdownView : ContentControl
                 for (var c = 0; c < rows[r].Count; c++)
                 {
                     var cell = new StackPanel { Spacing = 4 }; foreach (var child in (TableCell)rows[r][c]) cell.Children.Add(BlockView(child));
-                    var border = new Border { Style = (Style)Application.Current.Resources["Card"], CornerRadius = new CornerRadius(0), Padding = new Thickness(6), Child = cell }; Grid.SetRow(border, r); Grid.SetColumn(border, c); grid.Children.Add(border);
+                    var border = new ContinuousSurface { Style = (Style)Application.Current.Resources["Card"], CornerRadius = new CornerRadius(0), Padding = new Thickness(6), Child = cell }; Grid.SetRow(border, r); Grid.SetColumn(border, c); grid.Children.Add(border);
                 }
             }
             return grid;
@@ -70,8 +70,8 @@ public sealed class NativeMarkdownView : ContentControl
             }
             return stack;
         }
-        if (block is QuoteBlock quote) { var body = new StackPanel { Spacing = 7 }; foreach (var child in quote) body.Children.Add(BlockView(child)); return new Border { BorderBrush = (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"], BorderThickness = new Thickness(3, 0, 0, 0), Padding = new Thickness(12, 0, 0, 0), Child = body }; }
-        if (block is ThematicBreakBlock) return new Border { Height = 1, Background = (Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"], Margin = new Thickness(0, 8, 0, 8) };
+        if (block is QuoteBlock quote) { var body = new StackPanel { Spacing = 7 }; foreach (var child in quote) body.Children.Add(BlockView(child)); return new ContinuousSurface { BorderBrush = (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"], BorderThickness = new Thickness(3, 0, 0, 0), Padding = new Thickness(12, 0, 0, 0), Child = body }; }
+        if (block is ThematicBreakBlock) return new ContinuousSurface { Height = 1, Background = (Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"], Margin = new Thickness(0, 8, 0, 8) };
         if (block is LeafBlock leaf) return Rich(leaf);
         var fallback = new StackPanel { Spacing = 6 }; if (block is ContainerBlock container) foreach (var child in container) fallback.Children.Add(BlockView(child)); return fallback;
     }

@@ -51,13 +51,13 @@ public sealed partial class MainWindow
                 ollamaButtons[name] = (translate, summary);
                 translate.Click += async (_, _) => await SafeAsync(() => UseOllamaModelAsync(name, true)); summary.Click += async (_, _) => await SafeAsync(() => UseOllamaModelAsync(name, false));
                 Grid.SetColumn(translate, 1); Grid.SetColumn(summary, 2); row.Children.Add(translate); row.Children.Add(summary);
-                StoreCards.Children.Add(new Border { Style = (Style)Application.Current.Resources["Card"], Padding = new Thickness(18), Child = row });
+                StoreCards.Children.Add(new ContinuousSurface { Style = (Style)Application.Current.Resources["Card"], Padding = new Thickness(18), Child = row });
             }
         }
         if (models.Length == 0 && filter is 1 or 3) StoreCards.Children.Add(new TextBlock { Text = "没有匹配的模型。", Style = (Style)Application.Current.Resources["Muted"] });
         RefreshModelStoreStates();
     }
-    private Border ModelCard(StoreModel model)
+    private ContinuousSurface ModelCard(StoreModel model)
     {
         var installed = StoreModels.IsInstalled(model, settings, paths.ModelRoot); var applied = StoreModels.IsApplied(model, settings, paths.ModelRoot);
         var grid = new Grid { ColumnSpacing = 22, RowSpacing = 12 };
@@ -67,17 +67,22 @@ public sealed partial class MainWindow
         var heading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
         heading.Children.Add(new TextBlock { Text = model.Name, FontSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         var badge = new TextBlock { Text = applied ? "使用中" : installed ? "已下载" : model.Badge, FontSize = 10, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"] };
-        heading.Children.Add(new Border { Background = (Brush)Application.Current.Resources["AccentFillColorTertiaryBrush"], CornerRadius = new CornerRadius(5), Padding = new Thickness(7, 3, 7, 3), Child = badge });
+        heading.Children.Add(new ContinuousSurface { Background = (Brush)Application.Current.Resources["AccentFillColorTertiaryBrush"], CornerRadius = new CornerRadius(5), Padding = new Thickness(7, 3, 7, 3), Child = badge });
         details.Children.Add(heading);
         details.Children.Add(new TextBlock { Text = model.Subtitle, FontSize = 12, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"] });
         details.Children.Add(new TextBlock { Text = model.Description, Style = (Style)Application.Current.Resources["Muted"], FontSize = 13 });
         details.Children.Add(new TextBlock { Text = $"{model.Size}  ·  {model.Memory}  ·  完全本地", FontSize = 11, Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] });
+        if (model.Asr is { } asr)
+        {
+            var source = new HyperlinkButton { Content = "模型来源与许可 · " + asr.License, NavigateUri = new Uri(asr.Source), Padding = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Left, FontSize = 12 };
+            details.Children.Add(source);
+        }
         grid.Children.Add(details);
         var button = new Button { Content = applied ? "已应用" : installed ? "应用模型" : "下载并应用", IsEnabled = !applied && !modelDownloads.ContainsKey(model.Id), VerticalAlignment = VerticalAlignment.Center, Style = installed ? null : (Style)Application.Current.Resources["AccentButtonStyle"] };
         button.Click += async (_, _) => await SafeAsync(async () =>
         {
             if (aiBusy) throw new InvalidOperationException("请等待当前 AI 任务完成后再切换模型。");
-            if (StoreModels.IsInstalled(model, settings, paths.ModelRoot)) { StoreModels.Apply(model, settings, paths.ModelRoot); SaveAppliedModel(); return; }
+            if (StoreModels.IsInstalled(model, settings, paths.ModelRoot)) { ApplyStoreModel(model); SaveAppliedModel(); return; }
             await DownloadStoreModelAsync(model);
         });
         Grid.SetColumn(button, 1); grid.Children.Add(button);
@@ -87,7 +92,7 @@ public sealed partial class MainWindow
         var cancel = new Button { Content = "暂停", VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
         cancel.Click += (_, _) => modelDownloads.GetValueOrDefault(model.Id)?.Cancel(); Grid.SetRow(cancel, 1); Grid.SetColumn(cancel, 1); grid.Children.Add(cancel);
         modelCardProgress[model.Id] = (label, bar, line, cancel);
-        return new Border { Style = (Style)Application.Current.Resources["Card"], Padding = new Thickness(22), Child = grid };
+        return new ContinuousSurface { Style = (Style)Application.Current.Resources["Card"], Padding = new Thickness(22), Child = grid };
     }
     private void RefreshModelStoreStates()
     {
@@ -121,6 +126,17 @@ public sealed partial class MainWindow
         if (!aiBusy) { provider?.Dispose(); provider = null; }
         RefreshModelStoreStates(); Status("模型已应用，下一个任务会使用新模型。");
     }
+    private void ApplyStoreModel(StoreModel model)
+    {
+        StoreModels.Apply(model, settings, paths.ModelRoot);
+        if (current is not null && (model.Asr is not null || model.Id.StartsWith("whisper-", StringComparison.Ordinal)))
+        {
+            current.Transcription ??= TranscriptionOptions.FromSettings(settings);
+            current.Transcription.ModelPath = settings.TranscriptionModelPath; current.Transcription.Backend = settings.Backend;
+            current.Transcription.Language = settings.Language;
+            Dirty(); LoadTranscriptionOptions();
+        }
+    }
     private async Task UseOllamaModelAsync(string name, bool translation)
     {
         if (aiBusy) throw new InvalidOperationException("请等待当前 AI 任务完成。");
@@ -142,7 +158,20 @@ public sealed partial class MainWindow
         modelProgress[model.Id] = (-1, "正在读取模型信息…"); RefreshModelStoreStates();
         try
         {
-            if (model.Download is not null)
+            if (model.Asr is { } asr)
+            {
+                var lastUpdate = DateTime.MinValue;
+                var progress = new Progress<double>(p =>
+                {
+                    if (!modelDownloads.ContainsKey(model.Id) || (DateTime.UtcNow - lastUpdate).TotalMilliseconds < 250 && p < 1) return;
+                    lastUpdate = DateTime.UtcNow;
+                    modelProgress[model.Id] = (p, p >= 1 ? "下载完成，正在校验并解压…" : $"{p:P0} · {asr.Bytes / 1048576d:0} MB · 支持暂停续传");
+                    if (modelCardProgress.TryGetValue(model.Id, out var card)) { card.Label.Text = modelProgress[model.Id].Message; card.Bar.Value = p * 100; card.Bar.IsIndeterminate = p >= 1; }
+                });
+                await Task.Run(() => AsrModels.InstallAsync(asr, paths.ModelRoot, progress, cancellation.Token), cancellation.Token);
+                ApplyStoreModel(model);
+            }
+            else if (model.Download is not null)
             {
                 using var downloader = new ModelDownloader(); var metadata = await downloader.MetadataAsync(model.Download, cancellation.Token);
                 modelProgress[model.Id] = (-1, $"正在连接下载源 · {metadata.Size / 1048576d:0} MB"); RefreshModelStoreStates();
@@ -157,7 +186,7 @@ public sealed partial class MainWindow
                     if (modelCardProgress.TryGetValue(model.Id, out var card)) { card.Label.Text = modelProgress[model.Id].Message; card.Bar.IsIndeterminate = false; card.Bar.Value = p * 100; }
                 });
                 await downloader.DownloadAsync(model.Download, metadata, paths.ModelRoot, progress, cancellation.Token);
-                StoreModels.Apply(model, settings, paths.ModelRoot);
+                ApplyStoreModel(model);
             }
             else if (model.Id == "kokoro") await InstallSpeechPackAsync(false, cancellation.Token);
             else if (model.Id == "speakers") await InstallSpeakerPackAsync(false, cancellation.Token);

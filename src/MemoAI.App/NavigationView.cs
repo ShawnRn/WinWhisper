@@ -44,7 +44,7 @@ public sealed partial class MainWindow
             throw new ArgumentException("请输入有效的 http 或 https 媒体链接。");
         var autoTranscribe = LinkAutoTranscribe.IsChecked == true;
         var transcription = TranscriptionOptions.FromSettings(settings);
-        if (autoTranscribe && !File.Exists(transcription.ModelPath)) throw new FileNotFoundException("请先在模型商店下载并应用 Whisper 模型，或取消「自动开始本地转写」。");
+        if (autoTranscribe && !File.Exists(transcription.ModelPath)) throw new FileNotFoundException("请先在模型商店下载并应用转写模型，或取消「自动开始本地转写」。");
         var options = new OnlineDownloadOptions((LinkCookieBrowser.SelectedItem as ComboBoxItem)?.Tag as string ?? "", LinkBrowserProfile.Text.Trim(), LinkCookieFile.Text, LinkProxy.Text.Trim(), LinkQuality.SelectedIndex);
         using var cancellation = new CancellationTokenSource(); linkCancellation = cancellation;
         LinkDownload.IsEnabled = LinkInput.IsEnabled = false; LinkCancel.Visibility = LinkProgress.Visibility = Visibility.Visible;
@@ -80,21 +80,46 @@ public sealed partial class MainWindow
             {
                 RecordingState.Text = "正在保存录音…";
                 string output;
-                try { output = await recorder.StopAsync(); }
-                finally { recorder.Dispose(); recorder = null; recordingTimer.Stop(); recordingWatch.Stop(); RecordingMode.IsEnabled = true; RecordingBadge.Visibility = Visibility.Collapsed; RecordingAction.Content = "开始录音"; }
+                try { output = await FinishRecordingAsync(); }
+                finally { recorder.Dispose(); recorder = null; recordingTimer.Stop(); recordingWatch.Stop(); SetRecordingOptionsEnabled(true); RecordingBadge.Visibility = Visibility.Collapsed; RecordingAction.Content = "开始录音"; }
                 RecordingState.Text = "录音已保存";
-                await ImportPathsAsync([output]); Status("录音已保存到媒体库");
+                Status("录音与已完成字幕已保存到媒体库");
             }
             else
             {
                 var directory = Path.Combine(paths.DataRoot, "recordings"); Directory.CreateDirectory(directory);
-                var capture = new AudioRecorder(directory, RecordingMode.SelectedIndex, paths); capture.Start(); recorder = capture;
+                var options = Json.Read<AppSettings>(Json.Write(settings)); options.EngineRoot = paths.EngineRoot;
+                options.TranscriptionModelPath = (RecordingModel.SelectedItem as ModelChoice)?.Path ?? settings.TranscriptionModelPath;
+                options.Language = (RecordingLanguage.SelectedItem as LanguageChoice)?.Code ?? "auto";
+                if (AsrModels.IsManifest(options.TranscriptionModelPath)) options.Backend = ComputeBackend.Auto;
+                if (RecordingLive.IsOn)
+                {
+                    if (!File.Exists(options.TranscriptionModelPath)) throw new FileNotFoundException("请先选择已下载的端侧转写模型。");
+                    if (AsrModels.IsManifest(options.TranscriptionModelPath)) _ = SherpaTranscription.Configuration(options.TranscriptionModelPath, options);
+                }
+                uint processId = 0;
+                if (RecordingMode.SelectedIndex == 3)
+                {
+                    var app = RecordingApp.SelectedItem as RecordingAppChoice ?? throw new InvalidOperationException("请选择要内录的 App。");
+                    using var process = Process.GetProcessById((int)app.ProcessId);
+                    if (process.HasExited || process.StartTime.Ticks != app.Started) throw new InvalidOperationException("选中的 App 已退出，请刷新后重新选择。");
+                    processId = app.ProcessId;
+                }
+                liveRecordingStop?.Dispose(); recordingClipStop?.Dispose(); liveRecordingTask = recordingClipTask = null; liveRecordingClips = null; finishingRecording = null;
+                var capture = new AudioRecorder(directory, RecordingMode.SelectedIndex, paths, processId);
+                SetRecordingOptionsEnabled(false);
+                try { await capture.StartAsync(); } catch { capture.Dispose(); SetRecordingOptionsEnabled(true); throw; }
+                if (closing) { await capture.StopAsync(); capture.Dispose(); return; }
+                recorder = capture;
+                recordingSession = new MediaSession { Title = "录音 " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), MediaPath = capture.OutputPath, Transcription = TranscriptionOptions.FromSettings(options) };
                 recordingWatch.Restart(); recordingTimer.Start(); RecordingTime.Text = "00:00:00";
-                RecordingMode.IsEnabled = false; RecordingBadge.Visibility = Visibility.Visible;
+                RecordingBadge.Visibility = Visibility.Visible;
                 RecordingAction.Content = "停止并保存"; RecordingState.Text = "正在录音 · 可以切换功能区，录音会继续。";
+                LiveRecordingPanel.Visibility = Visibility.Collapsed;
+                if (RecordingLive.IsOn) BeginLiveRecording(options, capture);
             }
         }
         catch (Exception ex) { RecordingState.Text = "录音未完成：" + ex.Message; throw; }
-        finally { RecordingAction.IsEnabled = true; }
+        finally { if (!closing) RecordingAction.IsEnabled = true; }
     });
 }

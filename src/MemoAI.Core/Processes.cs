@@ -41,7 +41,10 @@ public static class Processes
 
 public sealed class WorkerClient(AppPaths paths)
 {
-    public async Task RunAsync(JobRequest request, Func<JobEvent, Task> onEvent, CancellationToken ct)
+    public Task RunAsync(JobRequest request, Func<JobEvent, Task> onEvent, CancellationToken ct) => RunCoreAsync(request, onEvent, ct, null);
+    public Task RunLiveAsync(JobRequest request, System.Threading.Channels.ChannelReader<LiveAudioClip> clips, Func<JobEvent, Task> onEvent, CancellationToken ct) => RunCoreAsync(request, onEvent, ct,
+        async (input, token) => { await foreach (var clip in clips.ReadAllAsync(token)) { await input.WriteLineAsync(Json.Write(clip)); await input.FlushAsync(token); } });
+    private async Task RunCoreAsync(JobRequest request, Func<JobEvent, Task> onEvent, CancellationToken ct, Func<StreamWriter, CancellationToken, Task>? writeClips)
     {
         var candidates = new[]
         {
@@ -55,10 +58,17 @@ public sealed class WorkerClient(AppPaths paths)
         var start = new ProcessStartInfo(worker) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
         using var process = new Process { StartInfo = start };
         process.Start();
+        using var inputCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
         using var stop = ct.Register(() => { try { if (!process.HasExited) process.Kill(true); } catch (InvalidOperationException) { } });
         var errorTask = process.StandardError.ReadToEndAsync();
-        await process.StandardInput.WriteLineAsync(Json.Write(request)); await process.StandardInput.FlushAsync(); process.StandardInput.Close();
+        var inputTask = Task.Run(async () =>
+        {
+            try { await process.StandardInput.WriteLineAsync(Json.Write(request)); await process.StandardInput.FlushAsync(ct); if (writeClips is not null) await writeClips(process.StandardInput, inputCancellation.Token); }
+            finally { process.StandardInput.Close(); }
+        }, ct);
         var completed = false;
+        try
+        {
         while (await process.StandardOutput.ReadLineAsync(ct) is { } line)
         {
             JobEvent e;
@@ -68,7 +78,15 @@ public sealed class WorkerClient(AppPaths paths)
             if (e.Type == "completed") completed = true;
         }
         await process.WaitForExitAsync(ct);
+        await inputTask;
         var error = await errorTask;
         if (process.ExitCode != 0 || !completed) throw new InvalidOperationException($"后台任务异常退出。{error[^Math.Min(2000, error.Length)..]}");
+        }
+        finally
+        {
+            inputCancellation.Cancel();
+            try { if (!process.HasExited) process.Kill(true); } catch (InvalidOperationException) { }
+            try { await inputTask; } catch (Exception) { }
+        }
     }
 }

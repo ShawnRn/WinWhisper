@@ -14,4 +14,4 @@ $appOutput="src/MemoAI.App/bin/$platform/$Configuration/net10.0-windows10.0.2610
 if(!(Test-Path $appOutput)){$appOutput="src/MemoAI.App/bin/$Configuration/net10.0-windows10.0.26100.0/$Rid"}
 New-Item -ItemType Directory -Path "$appOutput/worker" -Force | Out-Null
 Copy-Item -Path "artifacts/$Rid/worker/*" -Destination "$appOutput/worker" -Recurse -Force
-Write-Host "Application: $root/$appOutput/MemoAI.Native.exe"
+Write-Host "Application: $root/$appOutput/WinWhisper.exe"

@@ -22,12 +22,13 @@ public sealed class MediaThumbnail : ContentControl
     {
         HorizontalContentAlignment = HorizontalAlignment.Stretch; VerticalContentAlignment = VerticalAlignment.Stretch; IsTabStop = false;
         var grid = new Grid(); grid.Children.Add(placeholder); grid.Children.Add(image);
-        Content = new Border { CornerRadius = new(8), Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"], Child = grid };
+        Content = new ContinuousSurface { CornerRadius = new(8), Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"], Child = grid };
         Unloaded += (_, _) => loadCancellation?.Cancel();
     }
     private void Reset()
     {
-        loadCancellation?.Cancel(); image.Source = null; image.Visibility = Visibility.Collapsed;
+        ((ContinuousSurface)Content).Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"];
+        loadCancellation?.Cancel(); image.Source = null; image.Visibility = Visibility.Collapsed; placeholder.Visibility = Visibility.Visible;
         var extension = Path.GetExtension(Session?.MediaPath ?? "").ToLowerInvariant();
         placeholder.Glyph = extension is ".srt" or ".vtt" or ".ass" or ".txt" or "" ? "\uE8A5" : extension is ".mp3" or ".wav" or ".flac" or ".m4a" or ".ogg" or ".aac" ? "\uE8D6" : "\uE8B2";
         if (IsLoaded && loadedPaths is not null) _ = LoadAsync(loadedPaths);
@@ -56,7 +57,7 @@ public sealed class MediaThumbnail : ContentControl
                 File.Move(pending, cached, true);
             }
             if (!cancellation.IsCancellationRequested && Session == media && IsLoaded)
-            { image.Source = new BitmapImage(new Uri(cached)) { DecodePixelWidth = 480 }; image.Visibility = Visibility.Visible; }
+            { image.Source = new BitmapImage(new Uri(cached)) { DecodePixelWidth = 480 }; image.Visibility = Visibility.Collapsed; placeholder.Visibility = Visibility.Collapsed; ((ContinuousSurface)Content).Background = new ImageBrush { ImageSource = image.Source, Stretch = Stretch.UniformToFill }; }
         }
         catch (Exception) { /* Keep a useful file-type placeholder when a file or decoder is unavailable. */ }
         finally

@@ -21,9 +21,9 @@ public sealed partial class MainWindow
         try
         {
             var options = current.Transcription ?? TranscriptionOptions.FromSettings(settings);
-            var models = ModelCatalog.Items.Where(m => m.Id.StartsWith("whisper-") && File.Exists(Path.Combine(paths.ModelRoot, m.FileName)))
-                .Select(m => new ModelChoice(m.Name.Replace(" · 推荐", ""), Path.Combine(paths.ModelRoot, m.FileName))).ToList();
-            if (options.ModelPath.Length > 0 && !models.Any(m => m.Path.Equals(options.ModelPath, StringComparison.OrdinalIgnoreCase))) models.Add(new(Path.GetFileNameWithoutExtension(options.ModelPath), options.ModelPath));
+            var models = AsrModels.All.Where(m => AsrModels.IsInstalled(m, paths.ModelRoot)).Select(m => new ModelChoice(m.Name + " · CPU", m.ManifestPath(paths.ModelRoot))).Concat(ModelCatalog.Items.Where(m => m.Id.StartsWith("whisper-") && File.Exists(Path.Combine(paths.ModelRoot, m.FileName)))
+                .Select(m => new ModelChoice(m.Name.Replace(" · 推荐", ""), Path.Combine(paths.ModelRoot, m.FileName)))).ToList();
+            if (options.ModelPath.Length > 0 && !models.Any(m => m.Path.Equals(options.ModelPath, StringComparison.OrdinalIgnoreCase))) models.Add(new(TranscriptionEngines.ModelName(options.ModelPath), options.ModelPath));
             TranscriptionModel.ItemsSource = models;
             TranscriptionModel.SelectedItem = models.FirstOrDefault(m => m.Path.Equals(options.ModelPath, StringComparison.OrdinalIgnoreCase));
             TranscriptionModel.PlaceholderText = "请先下载或选择模型";
@@ -34,6 +34,7 @@ public sealed partial class MainWindow
             TranscriptionThreads.Value = options.Threads; TranscriptionBeam.Value = options.BeamSize; TranscriptionChunk.Value = options.ChunkSeconds;
             TranscriptionMaxLength.Value = options.MaxLength; TranscriptionTemperature.Value = options.Temperature;
             TranscriptionVad.IsChecked = options.EnableVad; TranscriptionPrompt.Text = options.Prompt;
+            UpdateTranscriptionCapabilities();
             UpdateTranscriptionHeader();
         }
         finally { loadingTranscription = false; }
@@ -55,7 +56,22 @@ public sealed partial class MainWindow
     {
         TranscriptionSettingsSummary.Text = $"{(TranscriptionModel.SelectedItem as ModelChoice)?.Name ?? "尚未选择模型"} · {(TranscriptionLanguage.SelectedItem as LanguageChoice)?.Name ?? "自动检测"} · {(TranscriptionBackend.SelectedItem as ComboBoxItem)?.Content}";
     }
-    private void TranscriptionOption_Changed(object sender, SelectionChangedEventArgs e) => SaveTranscriptionOptions();
+    private void TranscriptionOption_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (!loadingTranscription && ReferenceEquals(sender, TranscriptionModel) && AsrModels.IsManifest((TranscriptionModel.SelectedItem as ModelChoice)?.Path ?? ""))
+        {
+            loadingTranscription = true; TranscriptionBackend.SelectedIndex = 0; loadingTranscription = false;
+        }
+        UpdateTranscriptionCapabilities(); SaveTranscriptionOptions();
+    }
+    private void UpdateTranscriptionCapabilities()
+    {
+        if (TranscriptionModel is null || TranscriptionBeam is null) return;
+        var onnx = AsrModels.IsManifest((TranscriptionModel.SelectedItem as ModelChoice)?.Path ?? "");
+        TranscriptionBeam.IsEnabled = TranscriptionChunk.IsEnabled = TranscriptionMaxLength.IsEnabled = TranscriptionTemperature.IsEnabled = !onnx;
+        TranscriptionVad.Content = onnx ? "过滤近静音（能量检测）" : "检测静音（Silero VAD）";
+        foreach (var item in TranscriptionBackend.Items.OfType<ComboBoxItem>().Skip(1).Take(2)) item.IsEnabled = !onnx;
+    }
     private void TranscriptionNumber_Changed(NumberBox sender, NumberBoxValueChangedEventArgs args) => SaveTranscriptionOptions();
     private void TranscriptionCheck_Changed(object sender, RoutedEventArgs e) => SaveTranscriptionOptions();
     private void TranscriptionPrompt_Changed(object sender, TextChangedEventArgs e) => SaveTranscriptionOptions();
@@ -76,7 +92,8 @@ public sealed partial class MainWindow
         var options = ReadTranscriptionOptions();
         _ = options.ApplyTo(settings);
         current!.Transcription = options; Dirty();
-        if (!File.Exists(options.ModelPath)) throw new FileNotFoundException("请在本页选择已下载的 Whisper 模型，或打开模型商店下载。");
+        if (!File.Exists(options.ModelPath)) throw new FileNotFoundException("请在本页选择已下载的转写模型，或打开模型商店下载。");
+        if (AsrModels.IsManifest(options.ModelPath)) _ = SherpaTranscription.Configuration(options.ModelPath, options.ApplyTo(settings));
         if (current.Segments.Count > 0 && !await ConfirmAsync("重新转写", "新转写结果会替换当前字幕。已有字幕可先导出备份。", "重新转写")) return;
         await SaveCurrentAsync();
         await scheduler.EnqueueAsync(current, "transcribe"); TranscriptionFlyout.Hide(); RefreshTranscriptionProgress();

@@ -37,7 +37,7 @@ public sealed partial class MainWindow
     }
     private void ChatBubble_Loaded(object sender, RoutedEventArgs e)
     {
-        if (sender is Border border && border.DataContext is ChatTurn turn)
+        if (sender is ContinuousSurface border && border.DataContext is ChatTurn turn)
         { border.Background = turn.Role == "user" ? (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"] : null; border.Margin = new Thickness(turn.Role == "user" ? 20 : 0, 0, 0, 0); }
     }
     private void ChatMessages_Loaded(object sender, RoutedEventArgs e)

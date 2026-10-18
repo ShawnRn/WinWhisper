@@ -43,13 +43,18 @@ public sealed partial class MainWindow : Window
     private string? lastFollowId;
     private readonly SemaphoreSlim dialogs = new(1, 1);
 
+    private readonly MediaPlayer ownedPlayer = new() { AutoPlay = false };
+    private bool playbackReleased;
+
     public MainWindow()
     {
         InitializeComponent();
+
         Root.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
-        ExtendsContentIntoTitleBar = true; SetTitleBar(TitleBar);
+        ExtendsContentIntoTitleBar = true; SetTitleBar(TitleDragRegion);
         SystemBackdrop = new MicaBackdrop();
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1500, 980));
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "Brand", "WinWhisper.ico"));
         store = new Store(paths.DataRoot); settings = store.LoadSettings(); ApplySettings();
         sessions = new(store.GetSessions());
         RecentList.ItemsSource = sessions; SubtitleList.ItemsSource = visibleSegments; JobList.ItemsSource = jobLabels;
@@ -58,11 +63,10 @@ public sealed partial class MainWindow : Window
         navigationReady = true; ShowPage(LibraryView); UpdateAiAvailability();
         noticeTimer.Tick += (_, _) => { noticeTimer.Stop(); OperationNotice.IsOpen = false; };
         recordingTimer.Tick += (_, _) => RecordingTime.Text = recordingWatch.Elapsed.ToString(@"hh\:mm\:ss");
-        var mediaPlayer = new MediaPlayer { AutoPlay = false };
-        mediaPlayer.MediaOpened += (_, _) => DispatcherQueue.TryEnqueue(() => Player_MediaOpened(this, new RoutedEventArgs()));
-        mediaPlayer.MediaFailed += (_, args) => DispatcherQueue.TryEnqueue(() => Player_MediaFailed(args.ErrorMessage));
+        var mediaPlayer = ownedPlayer;
+        mediaPlayer.MediaOpened += MediaOpened;
+        mediaPlayer.MediaFailed += MediaFailed;
         Player.SetMediaPlayer(mediaPlayer);
-        ArchitectureLabel.Text = $"{AppPaths.Rid.Replace("win-", "").ToUpperInvariant()}  ·  本地 AI";
         saveTimer.Tick += async (_, _) => { saveTimer.Stop(); if (dirty) await SafeAsync(SaveCurrentAsync); };
         playbackTimer.Tick += PlaybackTick; playbackTimer.Start();
         PlaybackSeek.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler((_, _) => seekingPlayback = true), true);
@@ -72,6 +76,8 @@ public sealed partial class MainWindow : Window
         Root.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(Root_BackPointerPressed), true);
         Root.KeyboardAccelerators.Add(Accelerator(VirtualKey.Left, VirtualKeyModifiers.Menu, Back_Click));
         Root.KeyboardAccelerators.Add(Accelerator(VirtualKey.GoBack, VirtualKeyModifiers.None, Back_Click));
+        Root.KeyboardAccelerators.Add(Accelerator(VirtualKey.Right, VirtualKeyModifiers.Menu, Forward_Click));
+        Root.KeyboardAccelerators.Add(Accelerator(VirtualKey.GoForward, VirtualKeyModifiers.None, Forward_Click));
         Root.KeyboardAccelerators.Add(Accelerator(VirtualKey.O, VirtualKeyModifiers.Control, Import_Click));
         Root.KeyboardAccelerators.Add(Accelerator(VirtualKey.F, VirtualKeyModifiers.Control, (_, _) => SubtitleSearch.Focus(FocusState.Programmatic)));
         Root.KeyboardAccelerators.Add(Accelerator(VirtualKey.Z, VirtualKeyModifiers.Control, Undo_Click));
@@ -79,17 +85,7 @@ public sealed partial class MainWindow : Window
         AppWindow.Closing += async (_, e) =>
         {
             if (shutdownComplete) return;
-            e.Cancel = true; if (closing) return;
-            closing = true; playbackTimer.Stop(); saveTimer.Stop(); noticeTimer.Stop(); recordingTimer.Stop(); aiCancellation?.Cancel(); linkCancellation?.Cancel();
-            foreach (var cancellation in modelDownloads.Values) cancellation.Cancel();
-            try { await SaveCurrentAsync(); await scheduler.DisposeAsync(); provider?.Dispose(); if (recorder is not null) await recorder.StopAsync(); }
-            catch (Exception ex) { File.AppendAllText(Path.Combine(paths.DataRoot, "shutdown.log"), ex + "\n"); }
-            finally
-            {
-                recorder?.Dispose(); recorder = null; floating?.Close(); shutdownComplete = true;
-                // Finish this Closing event before closing again: cleanup may complete synchronously.
-                DispatcherQueue.TryEnqueue(() => { if (!windowClosed) Close(); });
-            }
+            e.Cancel = true; await ShutdownAndCloseAsync();
         };
         Root.Loaded += (_, _) =>
         {
@@ -103,6 +99,39 @@ public sealed partial class MainWindow : Window
     {
         var accelerator = new KeyboardAccelerator { Key = key, Modifiers = modifiers };
         accelerator.Invoked += (_, e) => { action(this, new RoutedEventArgs()); e.Handled = true; }; return accelerator;
+    }
+    private void MediaOpened(MediaPlayer sender, object args)
+    {
+        if (!closing) DispatcherQueue.TryEnqueue(() => { if (!closing && !windowClosed) Player_MediaOpened(this, new()); });
+    }
+    private void MediaFailed(MediaPlayer sender, MediaPlayerFailedEventArgs args)
+    {
+        if (!closing) DispatcherQueue.TryEnqueue(() => { if (!closing && !windowClosed) Player_MediaFailed(args.ErrorMessage); });
+    }
+    private void ReleasePlayback()
+    {
+        if (playbackReleased) return;
+        playbackReleased = true;
+        ownedPlayer.MediaOpened -= MediaOpened; ownedPlayer.MediaFailed -= MediaFailed;
+        var source = Player.Source;
+        if (ownedPlayer.PlaybackSession.CanPause) ownedPlayer.Pause();
+        Player.Source = null; Player.SetMediaPlayer(null);
+        (source as MediaSource)?.Dispose(); ownedPlayer.Dispose();
+    }
+    private async Task ShutdownAndCloseAsync()
+    {
+        if (closing) return;
+        closing = true; playbackTimer.Stop(); saveTimer.Stop(); noticeTimer.Stop(); recordingTimer.Stop(); aiCancellation?.Cancel(); linkCancellation?.Cancel();
+        foreach (var cancellation in modelDownloads.Values) cancellation.Cancel();
+        liveRecordingStop?.Cancel(); recordingClipStop?.Cancel();
+        try { await SaveCurrentAsync(); await scheduler.DisposeAsync(); provider?.Dispose(); if (recorder is not null) await FinishRecordingAsync(); }
+        catch (Exception ex) { File.AppendAllText(Path.Combine(paths.DataRoot, "shutdown.log"), ex + "\n"); }
+        finally
+        {
+            // Detach native video while the XAML window and dispatcher are still alive.
+            ReleasePlayback(); recorder?.Dispose(); recorder = null; floating?.Close(); shutdownComplete = true;
+            DispatcherQueue.TryEnqueue(() => { if (!windowClosed) Close(); });
+        }
     }
     private async Task SafeAsync(Func<Task> action)
     {
@@ -133,8 +162,15 @@ public sealed partial class MainWindow : Window
     }
     private void ShowPage(UIElement page)
     {
-        RecordNavigation(page);
-        foreach (var p in new UIElement[] { LibraryView, WorkspaceView, QueueView, RecordView, LinkView, SettingsView, ModelStoreView }) p.Visibility = p == page ? Visibility.Visible : Visibility.Collapsed;
+        if (page == RecordView) RefreshRecordingChoices();
+        var changed = RecordNavigation(page);
+        foreach (var p in new UIElement[] { LibraryView, WorkspaceView, QueueView, RecordView, LinkView, SettingsView, ModelStoreView })
+        {
+
+            if (changed) ResetPageMotion(p);
+            p.Visibility = p == page ? Visibility.Visible : Visibility.Collapsed;
+        }
+        AnimatePage(page, changed);
         synchronizingNavigation = true;
         try { Sidebar.SelectedItem = page == QueueView ? NavQueue : page == RecordView ? NavRecord : page == LinkView ? NavLink : page == SettingsView ? NavSettings : page == ModelStoreView ? NavModels : NavLibrary; }
         finally { synchronizingNavigation = false; }
@@ -145,6 +181,7 @@ public sealed partial class MainWindow : Window
         if (!string.IsNullOrWhiteSpace(settings.ModelRoot)) paths.ModelRoot = settings.ModelRoot;
         var theme = settings.Theme switch { "Dark" => ElementTheme.Dark, "Light" => ElementTheme.Light, _ => ElementTheme.Default };
         if (Root.RequestedTheme != theme) Root.RequestedTheme = theme;
+        if (settings.ReduceMotion) foreach (var page in new UIElement[] { LibraryView, WorkspaceView, QueueView, RecordView, LinkView, SettingsView, ModelStoreView }) ResetPageMotion(page);
         if (settings.ReduceMotion) { if (SystemBackdrop is not null) SystemBackdrop = null; }
         else if (SystemBackdrop is not MicaBackdrop) SystemBackdrop = new MicaBackdrop();
         UpdateAiModelLabel();
@@ -516,7 +553,7 @@ public sealed partial class MainWindow : Window
         TimelineCanvas.Children.Clear(); var width = TimelineCanvas.ActualWidth; var height = TimelineCanvas.ActualHeight;
         if (waveform.Length == 0 || width <= 0) return;
         var count = Math.Min(400, waveform.Length);
-        for (var i = 0; i < count; i++) { var h = Math.Max(2, waveform[i * waveform.Length / count] * (height - 8)); var bar = new Rectangle { Width = Math.Max(1, width / count - 1), Height = h, RadiusX = 1, RadiusY = 1, Fill = (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"] }; Canvas.SetLeft(bar, i * width / count); Canvas.SetTop(bar, (height - h) / 2); TimelineCanvas.Children.Add(bar); }
+        for (var i = 0; i < count; i++) { var h = Math.Max(2, waveform[i * waveform.Length / count] * (height - 8)); var bar = new Rectangle { Width = Math.Max(1, width / count - 1), Height = h, RadiusX = 0, RadiusY = 0, Fill = (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"] }; Canvas.SetLeft(bar, i * width / count); Canvas.SetTop(bar, (height - h) / 2); TimelineCanvas.Children.Add(bar); }
     }
     private void Timeline_Pressed(object sender, PointerRoutedEventArgs e) { if (current is not null && Player.MediaPlayer is not null && TimelineCanvas.ActualWidth > 0) Player.MediaPlayer.PlaybackSession.Position = TimeSpan.FromSeconds(Math.Clamp(e.GetCurrentPoint(TimelineCanvas).Position.X / TimelineCanvas.ActualWidth, 0, 1) * current.Duration); }
     private void Floating_Click(object sender, RoutedEventArgs e) { if (floating is not null) { floating.Close(); floating = null; return; } floating = new FloatingSubtitleWindow(); floating.Closed += (_, _) => floating = null; floating.Activate(); }
@@ -532,7 +569,7 @@ public sealed partial class MainWindow : Window
     private void Window_Closed(object sender, WindowEventArgs args)
     {
         windowClosed = closing = true; playbackTimer.Stop(); saveTimer.Stop(); noticeTimer.Stop(); recordingTimer.Stop(); current = null;
-        Player.MediaPlayer?.Dispose();
+        if (!playbackReleased) ReleasePlayback();
         // The media/overlay native windows can otherwise keep the dispatcher alive after the main window closes.
         DispatcherQueue.TryEnqueue(() => Application.Current.Exit());
     }

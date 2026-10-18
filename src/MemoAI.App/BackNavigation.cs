@@ -1,6 +1,8 @@
 using MemoAI.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Hosting;
+using System.Numerics;
 
 namespace MemoAI.App;
 
@@ -8,41 +10,83 @@ public sealed partial class MainWindow
 {
     private sealed record NavigationEntry(UIElement Page, MediaSession? Session);
     private readonly Stack<NavigationEntry> navigationHistory = [];
+    private readonly Stack<NavigationEntry> forwardHistory = [];
     private UIElement? navigationPage;
     private MediaSession? navigationSession;
-    private bool navigatingBack;
-    private void RecordNavigation(UIElement page)
+    private bool navigatingHistory;
+    private int navigationDirection;
+    private int navigationAnimationCount;
+    private readonly Windows.UI.ViewManagement.UISettings motionSettings = new();
+    private bool RecordNavigation(UIElement page)
     {
-        if (navigationPage != page || page == WorkspaceView && navigationSession?.Id != current?.Id)
+        var changed = navigationPage != page || page == WorkspaceView && navigationSession?.Id != current?.Id;
+        if (changed)
         {
-            if (!navigatingBack && navigationPage is not null) navigationHistory.Push(new(navigationPage, navigationSession));
+            if (!navigatingHistory && navigationPage is not null)
+            { navigationHistory.Push(new(navigationPage, navigationSession)); forwardHistory.Clear(); }
             navigationPage = page; navigationSession = page == WorkspaceView ? current : null;
         }
-        WorkspaceBack.IsEnabled = navigationHistory.Count > 0;
+        UpdateHistoryButtons();
+        return changed;
     }
-    private async void Back_Click(object sender, RoutedEventArgs e) => await SafeAsync(async () =>
+    private void UpdateHistoryButtons()
     {
-        if (navigatingBack) return;
-        navigatingBack = true;
+        NavigationBack.IsEnabled = navigationHistory.Count > 0;
+    }
+    private async void Back_Click(object sender, RoutedEventArgs e) => await SafeAsync(() => NavigateHistoryAsync(false));
+    private async void Forward_Click(object sender, RoutedEventArgs e) => await SafeAsync(() => NavigateHistoryAsync(true));
+    private async Task NavigateHistoryAsync(bool forward)
+    {
+        if (navigatingHistory) return;
+        navigatingHistory = true; navigationDirection = forward ? 1 : -1;
         try
         {
-            while (navigationHistory.TryPop(out var entry))
+            var source = forward ? forwardHistory : navigationHistory;
+            while (source.TryPop(out var entry))
             {
-                if (entry.Page == WorkspaceView)
+                if (entry.Page == WorkspaceView && (entry.Session is null || !sessions.Any(s => s.Id == entry.Session.Id))) continue;
+                var previous = navigationPage is null ? null : new NavigationEntry(navigationPage, navigationSession);
+                // Commit the reverse entry only after navigation succeeds (saving media can fail).
+                try
                 {
-                    if (entry.Session is null || !sessions.Any(s => s.Id == entry.Session.Id)) continue;
-                    if (current?.Id == entry.Session.Id) ShowPage(WorkspaceView); else await OpenSessionAsync(entry.Session);
+                    if (entry.Page == WorkspaceView && current?.Id != entry.Session!.Id) await OpenSessionAsync(entry.Session);
+                    else ShowPage(entry.Page);
                 }
-                else ShowPage(entry.Page);
+                catch { source.Push(entry); throw; }
+                if (previous is not null) (forward ? navigationHistory : forwardHistory).Push(previous);
                 break;
             }
-            WorkspaceBack.IsEnabled = navigationHistory.Count > 0;
         }
-        finally { navigatingBack = false; }
-    });
+        finally { navigatingHistory = false; navigationDirection = 0; UpdateHistoryButtons(); }
+    }
+    private void ResetPageMotion(UIElement page)
+    {
+        ElementCompositionPreview.SetIsTranslationEnabled(page, true);
+        var visual = ElementCompositionPreview.GetElementVisual(page);
+        visual.StopAnimation("Opacity"); visual.StopAnimation("Translation");
+        visual.Opacity = 1; visual.Properties.InsertVector3("Translation", Vector3.Zero);
+    }
+    private void AnimatePage(UIElement page, bool changed)
+    {
+        if (!changed || !Root.IsLoaded || settings.ReduceMotion || !motionSettings.AnimationsEnabled) return;
+        ElementCompositionPreview.SetIsTranslationEnabled(page, true);
+        var visual = ElementCompositionPreview.GetElementVisual(page);
+        var compositor = visual.Compositor;
+        using var easing = compositor.CreateCubicBezierEasingFunction(new(.2f, 0), new(0, 1));
+        var offset = navigationDirection == 0 ? new Vector3(0, 10, 0) : new Vector3(navigationDirection * 18, 0, 0);
+        using var slide = compositor.CreateVector3KeyFrameAnimation(); slide.Duration = TimeSpan.FromMilliseconds(200);
+        slide.InsertKeyFrame(0, offset); slide.InsertKeyFrame(1, Vector3.Zero, easing);
+        using var fade = compositor.CreateScalarKeyFrameAnimation(); fade.Duration = TimeSpan.FromMilliseconds(160);
+        fade.InsertKeyFrame(0, 0); fade.InsertKeyFrame(1, 1, easing);
+        visual.StartAnimation("Translation", slide); visual.StartAnimation("Opacity", fade);
+        navigationAnimationCount++;
+    }
     private void Root_BackPointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        if (e.GetCurrentPoint(Root).Properties.IsXButton1Pressed && navigationHistory.Count > 0)
+        var properties = e.GetCurrentPoint(Root).Properties;
+        if (properties.IsXButton1Pressed && navigationHistory.Count > 0)
         { e.Handled = true; Back_Click(this, new()); }
+        else if (properties.IsXButton2Pressed && forwardHistory.Count > 0)
+        { e.Handled = true; Forward_Click(this, new()); }
     }
 }

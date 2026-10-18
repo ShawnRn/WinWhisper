@@ -1,5 +1,10 @@
 # Repository instructions
 
+## Product and architecture
+
+- The product is **WinWhisper**, an independent Windows 11 local media, transcription, subtitle and AI workspace. Do not copy code or resources out of the Memo installer.
+- Retain the current `MemoAI.*` project/namespace identifiers and `%LOCALAPPDATA%/MemoAI.Native` data directory unless implementing an explicit, tested migration. The app executable and visible brand are `WinWhisper`.
+
 - Build a real Windows ARM64 and x64 WinUI 3 desktop application; do not replace the UI with a web application.
 - Keep media, inference, and model downloads off the UI thread. Run native inference in separate processes.
 - Default to local inference. Never silently upload media or transcripts to external AI services.
@@ -7,4 +12,44 @@
 - Use pinned dependencies and record engine download sources and SHA-256 hashes.
 - Keep progress in docs/PROGRESS.md honest; distinguish implemented behavior from runtime validation.
 - Make local Git commits at coherent, verified milestones. Do not push without user instruction.
+
+## Build and validation
+
+- Read the relevant files before changing them. Use `scripts/bootstrap.ps1`, then `scripts/build.ps1 -Rid win-arm64` or `-Rid win-x64`; SDK and engine versions must remain pinned.
+- Native workers and app output must match the selected RID. Check native PE architecture, while allowing managed AnyCPU assemblies. CUDA support depends on the actual engine build and self-test; do not infer acceleration from a GPU or driver version alone.
+- Never edit XAML or app sources while a build is running. Wait for the process to finish before editing, launching its output, or copying it into a daily-use folder. Never replace a running executable.
+- Use `scripts/test.ps1` for affected core behavior and `scripts/test-ui.ps1 -Rid <RID>` for native interaction changes. UI tests require an isolated `--data-root`; never clear personal media, transcripts, models or chat history for testing.
+- Add `-PlaybackVideo <path>` when changing media/window lifetime; successful startup alone does not prove safe shutdown. Verify a loaded video can close with process exit code 0.
+- Build both architectures for changes to shared UI or native integration. Record x64 execution under ARM64 emulation separately from validation on physical x64 hardware.
+- Keep `docs/PROGRESS.md` and README accurate: distinguish implemented, tested, partially supported and planned behavior. Do not label a model as supported merely because a download link exists.
+
+## Native UX and drawing
+
+- Keep WinUI 3 and native accessibility, keyboard focus, IME and high-DPI behavior. Do not replace the app with a browser UI.
+- Use one state surface per interactive item. Avoid nested hover/selection fills, square container overlays, delayed shape changes and full-tree rebuilding for a small state change.
+- G2 surfaces use edge-aligned tangents and zero endpoint curvature. Use the shared geometry, explicit antialiasing and DPI-aware sampling; do not claim that setting `CornerRadius` alone produces G2 continuity.
+- Never scan the visual tree to overwrite `Background`, `CornerRadius` or theme bindings owned by native visual states. Establish drawing in the control template before the first visible frame; keep brush identity stable for solid-color state changes.
+- Do not replace the `Clip` on XAML-owned composition visuals or reparent the XAML visual tree. Native controls rely on their named parts, CLR types and template structure.
+- Native template adaptations are generated from the pinned SDK by `scripts/update-native-surfaces.ps1`; fix the generator and preserve transitive resources across Default, Light and HighContrast themes. Do not hand-edit generated output.
+- Page, history and view-switch animations must respect Windows animation preferences and the app's reduced-motion option. Rapid navigation must reset old opacity/translation; replaying the current page must not flash it.
+- Give asynchronous actions immediate, local busy/error/cancel feedback. Keep playback controls outside the picture, preserve reading position when the user scrolls up, and follow streaming text only when the user is near the bottom.
+- Before claiming a visual fix, inspect the real native window as well as running appropriate regression checks. A screenshot is not proof of frame-by-frame flicker freedom.
+
+## Models, data and text
+
+- Model store entries must declare the actual engine, languages, architecture/backend constraints, source and license. Downloading and applying are separate validated steps; detect missing/incompatible files before starting inference.
+- Keep model downloads explicit and show size/progress/cancel. Preserve resumable downloads and completed task stages. Never present a CPU-only runtime as CUDA-accelerated.
+- GPU-intensive work is serialized by default. Keep decoding and inference outside the UI thread and isolate native crashes in workers.
+- ONNX ASR models use versioned `.asr.json` installation records and the pinned catalog in `AsrModels.cs`. Never route an arbitrary `.onnx` file to Whisper, guess a model family, or apply a partially extracted model. Retain model-specific language and license limits.
+- Live recording sends finalized PCM clips to a persistent worker. Keep offsets relative to the recording, preserve audio if inference fails, and retain the single GPU gate. COM process-loopback callbacks must be publicly COM-visible and agile; completion signals used by capture disposal must run continuations asynchronously.
+- Online media, browser Cookie extraction and third-party exports must be user-triggered. Do not log or commit Cookie values, tokens, authentication databases or credentials.
+- Chinese output uses corner quotes 「」, title brackets 《》, spaces between Chinese and English/digits, and full-width Chinese commas. Preserve code, URLs, file paths, valid JSON and English punctuation. Whisper uses decoding context rather than a chat system prompt; apply typography after transcription and in language-model prompts.
+
+## Open source and release hygiene
+
+- Original application code is MIT, matching the owner's other original projects. Preserve upstream notices and licenses; the repository license does not relicense SDKs, engines, fonts or models.
+- Update `CREDITS.md` when adding dependencies or using external code. Distinguish actual code reuse from interface/workflow references such as Proma and yt-dlp-gui.
+- Treat SDK-derived generated templates as local build inputs under the SDK terms; do not publish them as original MIT source. Keep their generation reproducible and retain the SDK notices for distribution.
+- Use the user-provided SVG as the formal icon source. Commit intentional brand assets, not temporary previews or build products; regenerate platform icons with `scripts/generate-icons.mjs`.
+- Before publishing, inspect tracked files and history for credentials, personal paths/data, model weights and binaries. Do not add ignored artifact or engine directories to make a build appear complete.
 
