@@ -1,0 +1,120 @@
+{
+  "files": [
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "599bc7eaec13274536cc3ec2d18e810e79bc9eb915237b4ee6d25081b6926214",
+      "rid": "win-arm64",
+      "path": "arm64/Microsoft.VC143.CRT/concrt140.dll"
+    },
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "af9dd287c5e5d47186fec391099e140bf9e758245d39c78e94f8cb4ffaada1e5",
+      "rid": "win-arm64",
+      "path": "arm64/Microsoft.VC143.CRT/msvcp140_1.dll"
+    },
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "17dd07ea186d419e1803a4b25785644b59d4346dd1a00df709fb6eb403baa11e",
+      "rid": "win-arm64",
+      "path": "arm64/Microsoft.VC143.CRT/msvcp140_2.dll"
+    },
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "4384e35592b7be1f0b80718eba2f779060d73c3e232eb1bfadf8a4cb9b14601f",
+      "rid": "win-arm64",
+      "path": "arm64/Microsoft.VC143.CRT/msvcp140_atomic_wait.dll"
+    },
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "6e075254adab66a80e1624b656fbe81043c23149e5045871b2eccc4c7ff589ce",
+      "rid": "win-arm64",
+      "path": "arm64/Microsoft.VC143.CRT/msvcp140_codecvt_ids.dll"
+    },
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "045faeab0b5710816ae160ea20dae8495ffc11bb51feca15d22aaf7ff3752cb3",
+      "rid": "win-arm64",
+      "path": "arm64/Microsoft.VC143.CRT/msvcp140.dll"
+    },
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "1b6511898e2d52815e059ecdf9635dd6bc86b487057cf3eb1bf4798d87855fb7",
+      "rid": "win-arm64",
+      "path": "arm64/Microsoft.VC143.CRT/vccorlib140.dll"
+    },
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "165c779ae40e8c1a914537873629c17546d6866ecb3c24cc2022805053e6c77d",
+      "rid": "win-arm64",
+      "path": "arm64/Microsoft.VC143.CRT/vcruntime140_threads.dll"
+    },
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "d8a8513921544569837e400d37cc71302819967ae6defa932266a7ecb41dbaf9",
+      "rid": "win-arm64",
+      "path": "arm64/Microsoft.VC143.CRT/vcruntime140.dll"
+    },
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "2405355f0a58067b258f8df33c327e3a3d716eaac5a3a5aebb757842d85bd376",
+      "rid": "win-x64",
+      "path": "x64/Microsoft.VC143.CRT/concrt140.dll"
+    },
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "bfad5aef4c63a669e3c140655cdfdf395b6c979b400a447bd5dcb65ed8826c3d",
+      "rid": "win-x64",
+      "path": "x64/Microsoft.VC143.CRT/msvcp140_1.dll"
+    },
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "3ea06f0ee098b4823cb79599df3780e7f23cce52c19aac31d2a0d47efe33a5e9",
+      "rid": "win-x64",
+      "path": "x64/Microsoft.VC143.CRT/msvcp140_2.dll"
+    },
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "640b2aefced484d0368eea5bdd06addd0658a3a70a49256e560d6923b404a479",
+      "rid": "win-x64",
+      "path": "x64/Microsoft.VC143.CRT/msvcp140_atomic_wait.dll"
+    },
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "f2069a52880ec885ee7f0511186100eb7fada0411a2b4948fafea7735b878a18",
+      "rid": "win-x64",
+      "path": "x64/Microsoft.VC143.CRT/msvcp140_codecvt_ids.dll"
+    },
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9",
+      "rid": "win-x64",
+      "path": "x64/Microsoft.VC143.CRT/msvcp140.dll"
+    },
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "19839407c3fdbc824e5bce189bf68ddf8097f12ec28b757797ffa0415c144ddd",
+      "rid": "win-x64",
+      "path": "x64/Microsoft.VC143.CRT/vccorlib140.dll"
+    },
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f",
+      "rid": "win-x64",
+      "path": "x64/Microsoft.VC143.CRT/vcruntime140_1.dll"
+    },
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "219915cf20822f34d5e7c1fdd4e21ae7f3396881096c51036225fb8f84b47afa",
+      "rid": "win-x64",
+      "path": "x64/Microsoft.VC143.CRT/vcruntime140_threads.dll"
+    },
+    {
+      "fileVersion": "14.44.35211.0",
+      "sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066",
+      "rid": "win-x64",
+      "path": "x64/Microsoft.VC143.CRT/vcruntime140.dll"
+    }
+  ],
+  "version": "14.44.35112",
+  "source": "Visual Studio 2022 Build Tools VC/Redist/MSVC"
+}

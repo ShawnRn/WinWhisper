@@ -9,6 +9,7 @@ WinWhisper 的应用代码采用 [MIT](LICENSE)。以下项目、字体、SDK、
 | [Windows App SDK / WinUI](https://github.com/microsoft/WindowsAppSDK) | 原生窗口、控件、Mica 与主题；控件模板在本机构建时生成 G2 绘制适配，不作为仓库源码分发 | NuGet 包保留 Microsoft Windows App SDK 许可及 NOTICE，文本位于 `src/MemoAI.App/Assets/Licenses/` |
 | [Win2D](https://github.com/microsoft/Win2D) | G2 几何路径和图形绘制 | MIT |
 | [.NET](https://github.com/dotnet/runtime) | 应用及工作进程运行时 | MIT，附加第三方声明以上游分发为准 |
+| [Microsoft Visual C++ Runtime](https://visualstudio.microsoft.com/license-terms/vs2022-cruntime/) | 应用、本地引擎及 Worker 的 app-local CRT，避免当前用户安装依赖全局提权 | Microsoft 运行时条款；保留 EULA 与 Redist 说明，版本和文件哈希见 `docs/msvc-runtime-lock.json` |
 | [CommunityToolkit.Mvvm](https://github.com/CommunityToolkit/dotnet) | MVVM 基础设施 | MIT |
 | [Microsoft.Data.Sqlite](https://github.com/dotnet/efcore) / [SQLite](https://sqlite.org/copyright.html) | 媒体、字幕、任务和历史保存 | 包及其原生依赖各自保留许可 |
 | [Markdig](https://github.com/xoofx/markdig) | 原生聊天 Markdown 解析 | BSD-2-Clause |

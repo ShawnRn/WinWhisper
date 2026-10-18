@@ -58,5 +58,15 @@
     "file": "Win2D-MIT.txt",
     "source": "https://raw.githubusercontent.com/microsoft/Win2D/25680382dd2136779e10ea6084f0c5ba437ae288/LICENSE.txt",
     "sha256": "c3ba493105fa52657c4c60d9b1680da7c01b188a8665d7a823c2a187fd259808"
+  },
+  {
+    "sha256": "f1e3d56ceb2ad68aae0711b910375009e651ac5530fa0760f0dea6e81e54fae1",
+    "source": "https://visualstudio.microsoft.com/wp-content/uploads/2021/09/Visual-C-Runtime-2015-2022-License-1.docx",
+    "file": "VisualCpp-EULA.docx"
+  },
+  {
+    "sha256": "da53b097e02b08e0fc69706102a60bc384fe756426ae4dc4a855e96f95cb2b9c",
+    "source": "https://aka.ms/vs/17/redist.txt",
+    "file": "VisualCpp-Redist.txt"
   }
 ]

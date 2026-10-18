@@ -42,7 +42,11 @@ function Assert-Architecture([string]$Directory,[string]$Rid){
             try{
                 $header=$pe.PEHeaders
                 $anyCpu=$null -ne $header.CorHeader -and ([int]$header.CorHeader.Flags -band 1) -ne 0 -and ([int]$header.CorHeader.Flags -band 2) -eq 0 -and [int]$header.CoffHeader.Machine -eq 0x14c
-                if(!$anyCpu -and [int]$header.CoffHeader.Machine -ne $machineExpected){throw "Wrong PE architecture: $relative [$($header.CoffHeader.Machine)]"}
+                # The pinned Windows App SDK AI x64 payload intentionally contains
+                # this ARM64EC companion. Accept only its exact upstream bytes.
+                $sdkCompanion=$Rid -eq 'win-x64' -and $relative -eq 'Microsoft.Windows.Workloads.Resources_ec.dll' -and
+                    (Get-FileHash -LiteralPath $file.FullName).Hash -eq '639F7DD3130D22C0929E5A86FB722B754BE6457CBF65593303E257178D5AEBE7'
+                if(!$anyCpu -and !$sdkCompanion -and [int]$header.CoffHeader.Machine -ne $machineExpected){throw "Wrong PE architecture: $relative [$($header.CoffHeader.Machine)]"}
             }finally{$pe.Dispose()}
         }finally{$stream.Dispose()}
     }
@@ -95,7 +99,28 @@ if(!$ExistingStage){
         Assert-Architecture $destination $rid
     }
 }
-foreach($rid in 'win-arm64','win-x64'){Assert-Architecture (Join-Path $stage $rid) $rid}
+# Use app-local VC runtime files; per-user installation must not require a
+# machine-wide redistributable installer. Pin both versions and file hashes.
+$crtLock=Get-Content (Join-Path $root 'docs/msvc-runtime-lock.json') -Raw | ConvertFrom-Json
+$vs=& 'C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe' -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+foreach($rid in 'win-arm64','win-x64'){
+    $payload=Join-Path $stage $rid
+    $destinations=@($payload,(Join-Path $payload 'worker'))
+    $destinations+=@(Get-ChildItem -LiteralPath (Join-Path $payload 'engines') -File -Recurse -Filter '*.exe' | ForEach-Object DirectoryName | Sort-Object -Unique)
+    foreach($directory in $destinations){
+        foreach($entry in $crtLock.files | Where-Object rid -EQ $rid){
+            $source=Join-Path $vs "VC/Redist/MSVC/$($crtLock.version)/$($entry.path)"
+            if((Get-FileHash -LiteralPath $source).Hash.ToLowerInvariant() -ne $entry.sha256){throw 'VC runtime hash mismatch'}
+            Copy-Item -LiteralPath $source -Destination $directory -Force
+        }
+    }
+    if($rid -eq 'win-arm64'){
+        foreach($entry in $crtLock.files | Where-Object rid -EQ 'win-x64'){
+            Copy-Item -LiteralPath (Join-Path $vs "VC/Redist/MSVC/$($crtLock.version)/$($entry.path)") -Destination (Join-Path $payload 'worker-x64') -Force
+        }
+    }
+    Assert-Architecture $payload $rid
+}
 $variants=if($Architecture -eq 'All'){@('Universal','x64','arm64')}else{@($Architecture)}
 foreach($variant in $variants){
     $rids=if($variant -eq 'Universal'){@('win-arm64','win-x64')}elseif($variant -eq 'arm64'){@('win-arm64')}else{@('win-x64')}
