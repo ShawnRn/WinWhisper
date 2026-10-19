@@ -17,6 +17,7 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 30
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Reconstruct installers and verify their original SHA-256
         shell: pwsh
         env:
@@ -25,6 +26,8 @@ jobs:
           BASE_TAG: ${{ inputs.base_tag }}
         run: |
           $ErrorActionPreference = 'Stop'
+          Add-Type -Path scripts/ReleaseDelta.cs
+          [ReleaseBinaryDelta]::SelfTest()
           foreach ($tag in @($env:RELEASE_TAG, $env:BASE_TAG)) {
             if ($tag -notmatch '^v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$') { throw 'Invalid tag' }
           }
@@ -49,8 +52,8 @@ jobs:
           $variants = @('Universal','x64','arm64')
           $seen = @{}
           New-Item -ItemType Directory -Path "$work/output" -Force | Out-Null
-          git -C "$work/output" init -q
           foreach ($entry in $manifest.files) {
+            Write-Host "Checking baseline and reconstructing $($entry.variant)"
             if ($entry.variant -notin $variants -or $seen.ContainsKey($entry.variant)) { throw 'Duplicate or unexpected architecture' }
             $seen[$entry.variant] = $true
             $baseName = "WinWhisper-$($manifest.baseVersion)-$($entry.variant)-Setup.exe"
@@ -63,13 +66,10 @@ jobs:
             if ((Get-FileHash $patch).Hash.ToLowerInvariant() -ne $entry.patchSha256) { throw 'Patch checksum mismatch' }
             gh release download $env:BASE_TAG --repo $env:GITHUB_REPOSITORY --pattern $baseName --dir "$work/base"
             if ($LASTEXITCODE -or (Get-FileHash "$work/base/$baseName").Hash.ToLowerInvariant() -ne $entry.baseSha256) { throw 'Baseline installer checksum mismatch' }
-            Copy-Item -LiteralPath "$work/base/$baseName" -Destination "$work/output/$targetName"
-            $stats = @(git -C "$work/output" apply --numstat $patch)
-            if ($LASTEXITCODE -or $stats.Count -ne 1 -or !$stats[0].EndsWith("`t" + $targetName)) { throw 'Patch must only modify the expected installer' }
-            git -C "$work/output" apply --binary $patch
-            if ($LASTEXITCODE) { throw 'Binary patch failed' }
+            [ReleaseBinaryDelta]::Restore("$work/base/$baseName", $patch, "$work/output/$targetName", $targetName, $entry.bytes)
             $result = Get-Item "$work/output/$targetName"
             if ($result.Length -ne $entry.bytes -or (Get-FileHash $result.FullName).Hash.ToLowerInvariant() -ne $entry.sha256) { throw 'Reconstructed installer differs from the locally tested file' }
+            Write-Host "Verified complete SHA-256: $targetName"
           }
           $release = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft | ConvertFrom-Json
           if ($LASTEXITCODE -or !$release.isDraft) { throw 'Draft was published during transport; refusing to replace assets' }

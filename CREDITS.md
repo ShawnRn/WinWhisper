@@ -59,4 +59,6 @@ CUDA 及 NVIDIA 运行时保留 NVIDIA 的分发条款。模型不随源码仓�
 
 字幕时间轴恢复参考 [whisper.cpp b5454 的 VAD 时间语义](https://github.com/ggml-org/whisper.cpp/blob/b5454/src/whisper.cpp)，以引擎日志的实测映射由 C# 独立解析；联合结构化翻译参考 [Index-Translate 官方约束翻译说明](https://huggingface.co/IndexTeam/Index-Translate-9B)。未新增原生引擎补丁或依赖。
 
+发布传输使用 Git 命令生成二进制差异；独立 MIT 实现的 `scripts/ReleaseDelta.cs` 按 [Git pack delta 格式](https://git-scm.com/docs/gitformat-pack) 和 Git binary patch 的 base85 字母表进行受限解码。这里只参考互操作数据格式，没有移植 Git 的实现代码，也不将 Git 或该发布辅助程序打包到应用运行时。
+
 发布安装程序保留 `licenses/`、各引擎目录和 SDK 资源中的原始声明。第三方源码包、确切提交和构建补丁的获取方式见 [第三方源码](docs/THIRD-PARTY-SOURCES.md)。补充许可文本的来源与 SHA-256 记录在 `distribution/licenses/sources.json`。
