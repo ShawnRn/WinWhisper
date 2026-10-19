@@ -30,6 +30,8 @@ jobs:
           }
           $release = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft | ConvertFrom-Json
           if ($LASTEXITCODE -or !$release.isDraft) { throw 'Transport is limited to an owned draft' }
+          $baseline = gh release view $env:BASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft | ConvertFrom-Json
+          if ($LASTEXITCODE -or $baseline.isDraft) { throw 'Baseline must already be published' }
           $work = Join-Path $env:RUNNER_TEMP 'WinWhisperTransport'
           New-Item -ItemType Directory -Path $work -Force | Out-Null
           gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern INSTALLER-TRANSPORT.zip --pattern SHA256SUMS.txt --dir "$work/incoming"
@@ -69,6 +71,8 @@ jobs:
             $result = Get-Item "$work/output/$targetName"
             if ($result.Length -ne $entry.bytes -or (Get-FileHash $result.FullName).Hash.ToLowerInvariant() -ne $entry.sha256) { throw 'Reconstructed installer differs from the locally tested file' }
           }
+          $release = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft | ConvertFrom-Json
+          if ($LASTEXITCODE -or !$release.isDraft) { throw 'Draft was published during transport; refusing to replace assets' }
           gh release upload $env:RELEASE_TAG "$work/output/WinWhisper-*-Setup.exe" --repo $env:GITHUB_REPOSITORY --clobber
           if ($LASTEXITCODE) { throw 'Verified installer upload failed' }
           $manifest | ConvertTo-Json -Depth 6 | Set-Content "$work/transport-results.json" -Encoding utf8
