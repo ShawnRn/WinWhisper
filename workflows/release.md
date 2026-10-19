@@ -33,3 +33,9 @@
 GitHub 先创建 draft prerelease、上传三种安装程序、`SHA256SUMS.txt` 和源码/许可资料，再手动运行 `.github/workflows/installer-qa.yml`。该工作流在 Windows x64 runner 上验证当前用户和所有用户安装，后者使用 runner 既有权限，测试脚本不会批准 UAC。`native_ui` 只有具备可用桌面时启用；关闭该项时不能声称完成 GUI 验证。通过后才撤销 draft 并保留 prerelease 标记，最后核对资产清单和下载地址。
 
 第三方来源与源码包见 [源码获取](../docs/THIRD-PARTY-SOURCES.md)。签名证书未配置时，不得将安装程序写成已签名，也不得指示绕过 Windows 安全拦截。
+
+## 慢连接传输
+
+已发布的基线安装包可与新包生成 Git 二进制增量：`scripts/package-release-deltas.ps1 -BaseVersion <旧版本> -Version <新版本>`。它只保留正向补丁、规范化文件路径，并记录基线 / 新文件 / 补丁的 SHA-256。将输出的 `INSTALLER-TRANSPORT.zip` 上传到新版本草稿，再运行 `Release Asset Transport` 工作流。
+
+工作流仅对草稿生效。下载已发布基线，分别对照旧、新发布的校验清单，限制每个补丁只改一个预期文件，重建后逐个验证新包的完整 SHA-256 与长度；传输不会重新编译或重新打包。只有字节完全相同的安装包才上传，原有本地安装验证仍对应同一文件。之后仍须执行原有 Installer QA，不以传输成功代替安装检查。传输工作流提交与原始应用 / 打包提交分别写入发布记录。

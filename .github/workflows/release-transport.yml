@@ -1,0 +1,78 @@
+name: Release Asset Transport
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Owned draft release to receive the exact validated installers
+        required: true
+        default: v0.1.0-preview.2
+      base_tag:
+        description: Published installer baseline
+        required: true
+        default: v0.1.0-preview.1
+permissions:
+  contents: write
+jobs:
+  reconstruct:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - name: Reconstruct installers and verify their original SHA-256
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          BASE_TAG: ${{ inputs.base_tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($tag in @($env:RELEASE_TAG, $env:BASE_TAG)) {
+            if ($tag -notmatch '^v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$') { throw 'Invalid tag' }
+          }
+          $release = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft | ConvertFrom-Json
+          if ($LASTEXITCODE -or !$release.isDraft) { throw 'Transport is limited to an owned draft' }
+          $work = Join-Path $env:RUNNER_TEMP 'WinWhisperTransport'
+          New-Item -ItemType Directory -Path $work -Force | Out-Null
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern INSTALLER-TRANSPORT.zip --pattern SHA256SUMS.txt --dir "$work/incoming"
+          if ($LASTEXITCODE) { throw 'Transport download failed' }
+          gh release download $env:BASE_TAG --repo $env:GITHUB_REPOSITORY --pattern SHA256SUMS.txt --dir "$work/base"
+          if ($LASTEXITCODE) { throw 'Baseline checksums download failed' }
+          $zip = [IO.Compression.ZipFile]::OpenRead("$work/incoming/INSTALLER-TRANSPORT.zip")
+          try {
+            $allowed = @('manifest.json','Universal.patch','x64.patch','arm64.patch')
+            if ($zip.Entries.Count -ne 4 -or @($zip.Entries | Where-Object { $_.FullName -notin $allowed }).Count) { throw 'Unexpected archive entries' }
+          } finally { $zip.Dispose() }
+          Expand-Archive -LiteralPath "$work/incoming/INSTALLER-TRANSPORT.zip" -DestinationPath "$work/patches"
+          $manifest = Get-Content "$work/patches/manifest.json" -Raw | ConvertFrom-Json
+          if ($manifest.version -ne $env:RELEASE_TAG.Substring(1) -or $manifest.baseVersion -ne $env:BASE_TAG.Substring(1) -or $manifest.files.Count -ne 3) { throw 'Unexpected transport manifest' }
+          $variants = @('Universal','x64','arm64')
+          $seen = @{}
+          New-Item -ItemType Directory -Path "$work/output" -Force | Out-Null
+          git -C "$work/output" init -q
+          foreach ($entry in $manifest.files) {
+            if ($entry.variant -notin $variants -or $seen.ContainsKey($entry.variant)) { throw 'Duplicate or unexpected architecture' }
+            $seen[$entry.variant] = $true
+            $baseName = "WinWhisper-$($manifest.baseVersion)-$($entry.variant)-Setup.exe"
+            $targetName = "WinWhisper-$($manifest.version)-$($entry.variant)-Setup.exe"
+            if ($entry.baseName -ne $baseName -or $entry.targetName -ne $targetName -or $entry.patchName -ne "$($entry.variant).patch") { throw 'Unexpected filename' }
+            $baseLine = @(Get-Content "$work/base/SHA256SUMS.txt" | Where-Object { $_.EndsWith('  ' + $baseName) })
+            $targetLine = @(Get-Content "$work/incoming/SHA256SUMS.txt" | Where-Object { $_.EndsWith('  ' + $targetName) })
+            if ($baseLine.Count -ne 1 -or $targetLine.Count -ne 1 -or $baseLine[0].Split(' ')[0] -ne $entry.baseSha256 -or $targetLine[0].Split(' ')[0] -ne $entry.sha256) { throw 'Manifest differs from release checksums' }
+            $patch = Join-Path "$work/patches" $entry.patchName
+            if ((Get-FileHash $patch).Hash.ToLowerInvariant() -ne $entry.patchSha256) { throw 'Patch checksum mismatch' }
+            gh release download $env:BASE_TAG --repo $env:GITHUB_REPOSITORY --pattern $baseName --dir "$work/base"
+            if ($LASTEXITCODE -or (Get-FileHash "$work/base/$baseName").Hash.ToLowerInvariant() -ne $entry.baseSha256) { throw 'Baseline installer checksum mismatch' }
+            Copy-Item -LiteralPath "$work/base/$baseName" -Destination "$work/output/$targetName"
+            $stats = @(git -C "$work/output" apply --numstat $patch)
+            if ($LASTEXITCODE -or $stats.Count -ne 1 -or !$stats[0].EndsWith("`t" + $targetName)) { throw 'Patch must only modify the expected installer' }
+            git -C "$work/output" apply --binary $patch
+            if ($LASTEXITCODE) { throw 'Binary patch failed' }
+            $result = Get-Item "$work/output/$targetName"
+            if ($result.Length -ne $entry.bytes -or (Get-FileHash $result.FullName).Hash.ToLowerInvariant() -ne $entry.sha256) { throw 'Reconstructed installer differs from the locally tested file' }
+          }
+          gh release upload $env:RELEASE_TAG "$work/output/WinWhisper-*-Setup.exe" --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE) { throw 'Verified installer upload failed' }
+          $manifest | ConvertTo-Json -Depth 6 | Set-Content "$work/transport-results.json" -Encoding utf8
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-transport-${{ github.run_id }}
+          path: ${{ runner.temp }}/WinWhisperTransport/transport-results.json
