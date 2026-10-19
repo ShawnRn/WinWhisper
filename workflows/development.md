@@ -25,3 +25,9 @@ $appOut = Join-Path $PWD "artifacts/preview-apps/$platform/Release/net10.0-windo
 DirectML 本地运行时由 `scripts/build-sherpa-directml.ps1 -Rid <RID>` 生成；两个架构分别构建，保留源码补丁及声明。安装包还需要 Visual Studio Build Tools 的固定 app-local CRT，版本和哈希见 `docs/msvc-runtime-lock.json`。只复制对应架构文件；上游 ARM64 CRT 目录中存在 x64 文件，不能不加校验地全量混入 ARM64 应用。
 
 完成两种架构的隔离回归后按 [发布流程](release.md) 打包。打包时保留固定 Windows App SDK x64 分发中的 ARM64EC 配套文件，以确切哈希校验该例外，不能笼统允许混合架构 DLL。
+
+## 存储整理
+
+先按目录统计占用，再核对完整路径、目录链接和运行中的进程。历史 `artifacts/*-apps`、`*-workers`、安装 `stage-*` 和隔离测试内的 `gpu-workers` 会重复保存数 GB 的可再生成文件；保留测试结果、GPU 证据、源码、模型、媒体和已发布安装包。新发布完成前保留其构建和暂存，完成后可将临时差异文件及还原副本列入清理清单。
+
+只清理已确认属于项目且没有进程使用的输出。环境阻止删除时，将清单和已核对目标在资源管理器定位给用户手动处理，不能换一种删除机制绕过限制。文件压缩可保留文件并减少实际占用，但不能把逻辑文件大小当成压缩后的磁盘占用。

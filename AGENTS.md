@@ -13,6 +13,7 @@ Read [workflows/README.md](workflows/README.md) for the development, native UI, 
 - Do not commit models, SDKs, native engine binaries, personal media, credentials, or generated outputs.
 - Use pinned dependencies and record engine download sources and SHA-256 hashes.
 - Keep progress in docs/PROGRESS.md honest; distinguish implemented behavior from runtime validation.
+- Before storage cleanup, inventory generated outputs and exclude active process paths, models, imported media, reports and source. Verify resolved paths and reparse points before recursive operations. If deletion is blocked by the environment, reveal the reviewed targets for manual cleanup rather than using another deletion mechanism.
 - Make local Git commits at coherent, verified milestones. Do not push without user instruction.
 
 ## Build and validation
@@ -74,4 +75,5 @@ Read [workflows/README.md](workflows/README.md) for the development, native UI, 
 - Large offline payloads are precompressed with a native encoder, checked by the pinned extractor, and embedded without recompression. Retain the helper's license/source and the total-payload size guard. Reused stage/payload directories must belong to the same verified build; record the actual encoder version in release provenance.
 - Publish third-party notices, source access/build recipes and SHA-256 checksums alongside the installers. Keep release notes explicit about unsigned installers, compatibility testing and known model/backend failures. Only publish the prerelease after its packaged assets pass the required checks.
 - Preserve published tags and artifact checksums. Record the app/Worker build commits, actual packaging tools, local UI coverage and hosted CI coverage in release provenance. Update README download links after verifying the release is public; later documentation updates must not rewrite the published tag.
+- Slow-link release transport may use verified binary deltas and the bounded streaming helper. Only restore into an owned temporary directory, verify both baseline and final SHA-256 against release manifests, and replace assets only while the destination remains a draft. Transport never substitutes for installer QA; record its source and run separately from the app build.
 

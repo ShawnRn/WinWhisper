@@ -6,26 +6,24 @@
 
 ## 安装
 
-当前预发布为 [0.1.0 Preview 1](https://github.com/ShawnRn/WinWhisper/releases/tag/v0.1.0-preview.1)。需要 Windows 11，无需另装 .NET SDK。
+当前预发布为 [0.1.0 Preview 2](https://github.com/ShawnRn/WinWhisper/releases/tag/v0.1.0-preview.2)。需要 Windows 11，无需另装 .NET SDK。
 
-`main` 分支包含发布后的字幕增量刷新和英语撇号排版修复；以下 Preview 1 安装包仍保留原发布内容。
-
-源码还提供英语 uh / um 自动清理、上下文标点恢复、全文字幕 Agent，以及持久版本 / Diff / 允许与拒绝 / 回滚。使用说明见 [字幕 Agent 与版本](workflows/transcript-agent.md)，这些功能尚未重新打包到上述安装程序。
-
-开发版还加入首次启动引导：本地检测 CPU / 内存 / 显卡、短时 CPU 运算测试、按素材语言推荐模型，以及明确确认后的模型 / 可选 CUDA 依赖下载；可跳过并从设置重新进入。自有后台进程名统一为 `WinWhisper.Worker`。聊天支持当前媒体下新建独立对话、搜索和恢复历史对话与草稿。详见 [首次设置](workflows/first-run.md)。这些改动不包含在 Preview 1 下载中。
+本次预发布包含首次使用引导、独立对话与历史、字幕增量刷新、英语断句与上下文翻译，以及全文字幕 Agent / 原位 Diff / 允许与拒绝 / 持久回滚。详见 [首次设置](workflows/first-run.md)、[字幕 Agent 与版本](workflows/transcript-agent.md) 和 [更新说明](docs/RELEASE-0.1.0-preview.2.md)。
 
 | 安装程序 | 适用设备 |
 |---|---|
-| [Universal](https://github.com/ShawnRn/WinWhisper/releases/download/v0.1.0-preview.1/WinWhisper-0.1.0-preview.1-Universal-Setup.exe) | 自动选择 ARM64 / x64，包含两套离线负载 |
-| [x64](https://github.com/ShawnRn/WinWhisper/releases/download/v0.1.0-preview.1/WinWhisper-0.1.0-preview.1-x64-Setup.exe) | Intel / AMD x64 |
-| [ARM64](https://github.com/ShawnRn/WinWhisper/releases/download/v0.1.0-preview.1/WinWhisper-0.1.0-preview.1-arm64-Setup.exe) | Windows ARM64 |
+| [Universal](https://github.com/ShawnRn/WinWhisper/releases/download/v0.1.0-preview.2/WinWhisper-0.1.0-preview.2-Universal-Setup.exe) | 自动选择 ARM64 / x64，包含两套离线负载 |
+| [x64](https://github.com/ShawnRn/WinWhisper/releases/download/v0.1.0-preview.2/WinWhisper-0.1.0-preview.2-x64-Setup.exe) | Intel / AMD x64 |
+| [ARM64](https://github.com/ShawnRn/WinWhisper/releases/download/v0.1.0-preview.2/WinWhisper-0.1.0-preview.2-arm64-Setup.exe) | Windows ARM64 |
 
 默认仅为当前用户安装，也可选择为所有用户安装；桌面快捷方式默认不勾选。安装后从开始菜单打开 WinWhisper。升级和卸载保留模型、录音、字幕与对话，用户数据沿用 `%LOCALAPPDATA%/MemoAI.Native/`。
 
-安装程序包含应用与基础引擎。模型及可选 ONNX CUDA 运行时在模型商店下载；安装和临时解压需预留数 GB 空间。此版本未签名，GPU 兼容限制见 [GPU 支持](docs/GPU.md)。发布页提供 [SHA-256 清单](https://github.com/ShawnRn/WinWhisper/releases/download/v0.1.0-preview.1/SHA256SUMS.txt)、[验证记录](https://github.com/ShawnRn/WinWhisper/releases/download/v0.1.0-preview.1/RELEASE-QA.json) 和第三方源码包。
+安装程序包含应用与基础引擎。模型及可选 ONNX CUDA 运行时在模型商店下载；安装和临时解压需预留数 GB 空间。此版本未签名，GPU 兼容限制见 [GPU 支持](docs/GPU.md)。发布页提供 [SHA-256 清单](https://github.com/ShawnRn/WinWhisper/releases/download/v0.1.0-preview.2/SHA256SUMS.txt)、[验证记录](https://github.com/ShawnRn/WinWhisper/releases/download/v0.1.0-preview.2/RELEASE-QA.json) 和第三方源码包。
 
 ## 能做什么
 
+- 首次启动在本机检测 CPU / 内存 / 显卡，结合短时 CPU 运算估计和素材语言推荐模型，资源充足优先 Whisper large-v3。明确确认后校验下载，可暂停、继续、返回上一步或稍后设置；技术详情默认折叠。检测不上传电脑信息，CPU 估计不代表实测 GPU 转写速度。
+- 自有后台进程统一为 `WinWhisper.Worker`；当前媒体支持新建独立对话、搜索和恢复历史对话及草稿。
 - 转写字幕增量更新，保留已显示条目、选中和滚动位置；英语缩写使用紧凑的弯撇号。
 - 新转写可自动清理独立 uh / um；已有字幕可预览后清理。右侧「修改字幕」连接完整转写，中间字幕区原位审阅词级差异 / 修改前 / 修改后，只给变化片段上色。允许后写入，拒绝保留原文；历史按钮支持跨重启审阅和追加式回滚。
 - 导入本地音视频、SRT / VTT 字幕，或粘贴在线媒体链接；下载后可自动排队转写。
@@ -46,8 +44,8 @@ AI 默认留在本机。联网用于用户触发的模型/引擎下载、在线�
 
 ## 快速使用
 
-1. 从开始菜单打开 WinWhisper，导入文件或粘贴链接。
-2. 在「模型商店」下载并应用转写模型，或在「转写设置」选择本地模型；大模型不包含在源码仓库中。
+1. 从开始菜单打开 WinWhisper，按首次引导准备推荐模型，也可稍后设置。
+2. 导入文件或粘贴链接；在「模型商店」可更换模型，或在「转写设置」选择已有本地模型。模型权重不随安装程序提供。
 3. 在媒体工作区选择语言、后端和参数，点击「开始转写」。完成后可以编辑、翻译、问答和导出。
 
 聊天使用 Enter 发送、Shift+Enter 换行，并有输入法组词保护。媒体工作区空格播放/暂停，输入文字时不抢占空格。时间引用点击后定位并播放。Alt+← / → 和鼠标侧键用于返回 / 前进。常用操作包括 Ctrl+O 导入、Ctrl+F 搜索字幕及 Ctrl+Z 撤销。
